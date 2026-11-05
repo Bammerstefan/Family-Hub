@@ -1,9 +1,12 @@
-/* BamLabs Family Hub 0.1.0 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.2.0 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {members: [], tasks: []};
+    this.data = {members: [], tasks: [], events: []};
+    this.calendarMode = "month";
+    this.calendarAnchor = new Date();
+    this.editEvent = null;
     this.tab = "today";
     this.busy = false;
     this.loaded = false;
@@ -33,6 +36,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       this.error = "";
       this.editMember = null;
       this.editTask = null;
+      this.editEvent = null;
     } catch(e) { this.error = e.message || String(e); }
     finally { this.busy = false; this.render(); }
   }
@@ -62,23 +66,24 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       :host {display:block;min-height:100%;font-family:var(--primary-font-family,system-ui,-apple-system,sans-serif);color:var(--primary-text-color,#192238);background:var(--primary-background-color,#f5f7fb)}
       *,*:before,*:after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}
       .page{max-width:1120px;margin:0 auto;padding:24px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:25px;font-weight:800;letter-spacing:-.6px}.small{font-size:13px;color:var(--secondary-text-color,#697386)}.nav{display:flex;gap:9px;overflow:auto;margin:23px 0}.tab{border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);padding:11px 16px;border-radius:12px;color:inherit;white-space:nowrap;font-weight:650}.tab.selected{background:#1464db;color:white;border-color:#1464db}
-      .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}
-      @media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}}`;
+      .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
+      @media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}}`;
     root.append(style);
     const page=this.el("main","page");
     const header=this.el("div","top");
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
-    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.1.0"));page.append(header);
+    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.2.0"));page.append(header);
     const nav=this.el("nav","nav");
-    [["today","Übersicht"],["tasks","Aufgaben"],["members","Familie"]].forEach(([id,label])=>{
-      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.render();},`tab ${this.tab===id?"selected":""}`));
+    [["today","Übersicht"],["calendar","Kalender"],["tasks","Aufgaben"],["members","Familie"]].forEach(([id,label])=>{
+      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();},`tab ${this.tab===id?"selected":""}`));
     });page.append(nav);
     if(this.error) page.append(this.el("div","notice",`Hinweis: ${this.error}`));
     if(!this.loaded) {page.append(this.el("div","panel",this.busy?"Daten werden geladen …":"Keine Verbindung zu Family Hub. Bitte Integration prüfen."));root.append(page);return;}
     if(this.tab==="today") this.renderToday(page);
     if(this.tab==="members") this.renderMembers(page);
+    if(this.tab==="calendar") this.renderCalendar(page);
     if(this.tab==="tasks") this.renderTasks(page);
-    page.append(this.el("div","small footer","Daten werden lokal in Home Assistant gespeichert. Kalender und PRO-Funktionen folgen in späteren Versionen."));
+    page.append(this.el("div","small footer","Daten werden lokal in Home Assistant gespeichert. PRO-Funktionen folgen in späteren Versionen."));
     root.append(page);
   }
   renderToday(page) {
@@ -86,17 +91,120 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const today=new Date();const localDate=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
     const due=pending.filter(t=>t.due && t.due<=localDate);
     const stats=this.el("div","grid");
-    [[this.data.members.length,"Familienmitglieder"],[pending.length,"Offene Aufgaben"],[due.length,"Heute fällig / überfällig"]].forEach(([v,l])=>{
+    [[this.data.members.length,"Familienmitglieder"],[pending.length,"Offene Aufgaben"],[due.length,"Heute fällig / überfällig"],[this.occurrences(localDate,localDate).length,"Termine heute"]].forEach(([v,l])=>{
       const c=this.el("div","panel");c.append(this.el("div","small",l),this.el("div","stat",String(v)));stats.append(c);
     });page.append(stats);
     const card=this.el("section","panel");card.append(this.cardTitle("Heute im Blick"));
     if(!due.length) card.append(this.el("div","empty","Keine fälligen Aufgaben – Zeit für etwas Schönes!"));
     else due.sort((a,b)=>a.due.localeCompare(b.due)).forEach(t=>card.append(this.taskRow(t)));
     card.append(this.button("Alle Aufgaben öffnen",()=>{this.tab="tasks";this.render();},"btn secondary"));page.append(card);
+    const appointments=this.el("section","panel");appointments.append(this.cardTitle("Termine heute"));
+    const todayEvents=this.occurrences(localDate,localDate);
+    if(!todayEvents.length) appointments.append(this.el("div","empty","Heute keine Termine."));
+    else todayEvents.forEach(o=>appointments.append(this.eventRow(o)));
+    appointments.append(this.button("Kalender öffnen",()=>{this.tab="calendar";this.render();},"btn secondary"));page.append(appointments);
     const family=this.el("section","panel");family.append(this.cardTitle("Unsere Familie"));
     if(!this.data.members.length) family.append(this.el("p","muted","Lege zuerst eure Familienmitglieder an."));
     else {const chips=this.el("div","chips");this.data.members.forEach(m=>{const c=this.el("span","chip",m.name);c.style.borderLeft=`5px solid ${m.color}`;chips.append(c);});family.append(chips);}
     family.append(this.el("p","small","Tipp: Aufgaben können mehreren Familienmitgliedern zugeordnet werden."));page.append(family);
+  }
+  isoDate(d) {return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
+  addDays(date,n) {const d=new Date(date.getFullYear(),date.getMonth(),date.getDate());d.setDate(d.getDate()+n);return d;}
+  monday(date) {return this.addDays(date,-((date.getDay()+6)%7));}
+  monthStep(date,months) {return new Date(date.getFullYear(),date.getMonth()+months,1);}
+  // Expand recurring events only for the visible window. No unbounded loops or stored duplicates.
+  occurrences(from,to) {
+    const out=[];const fromD=new Date(`${from}T00:00:00`),toD=new Date(`${to}T00:00:00`);
+    for(const ev of (this.data.events||[])) {
+      const first=new Date(`${ev.start.slice(0,10)}T00:00:00`);
+      const endDate=new Date(`${ev.end.slice(0,10)}T00:00:00`);
+      const duration=Math.max(0,Math.round((endDate-first)/86400000));
+      let occurrence=first;let n=0;
+      while(occurrence<=toD && n<10000) {
+        const last=this.addDays(occurrence,duration);
+        if(last>=fromD && occurrence<=toD){
+          const startISO=this.isoDate(occurrence),endISO=this.isoDate(last);
+          out.push({event:ev,start:startISO,end:endISO,time:ev.all_day?"":ev.start.slice(11,16)});
+        }
+        if(ev.repeat==="none")break;
+        n++;
+        if(ev.repeat==="daily")occurrence=this.addDays(first,n);
+        else if(ev.repeat==="weekly")occurrence=this.addDays(first,n*7);
+        else if(ev.repeat==="monthly") {
+          const target=this.monthStep(first,n);
+          if(first.getDate()>new Date(target.getFullYear(),target.getMonth()+1,0).getDate())continue;
+          occurrence=new Date(target.getFullYear(),target.getMonth(),first.getDate());
+        } else if(ev.repeat==="yearly"){
+          const year=first.getFullYear()+n;
+          if(first.getMonth()===1 && first.getDate()===29 && new Date(year,1,29).getMonth()!==1)continue;
+          occurrence=new Date(year,first.getMonth(),first.getDate());
+        } else break;
+      }
+    }
+    return out.sort((a,b)=>(a.start+a.time).localeCompare(b.start+b.time));
+  }
+  eventColor(ev) {return this.data.members.find(m=>(ev.members||[]).includes(m.id))?.color||"#1464db";}
+  eventRow(o) {
+    const ev=o.event;const r=this.el("div","item");const dot=this.el("span","dot");dot.style.background=this.eventColor(ev);r.append(dot);
+    const body=this.el("div","item-main");body.append(this.el("div","item-title",ev.title));
+    const meta=[`${this.dateLabel(o.start)}${o.end!==o.start?" – "+this.dateLabel(o.end):""}`,ev.all_day?"Ganztägig":ev.start.slice(11,16)+" – "+ev.end.slice(11,16),...ev.members.map(id=>this.memberName(id))];
+    body.append(this.el("div","small",meta.join(" · ")));
+    if(ev.description)body.append(this.el("div","desc",ev.description));r.append(body);
+    const buttons=this.el("div","actions");buttons.append(this.button("✎",()=>{this.tab="calendar";this.editEvent={...ev,members:[...ev.members]};this.render();},"btn secondary"));
+    buttons.append(this.button("×",()=>{if(confirm(`Termin „${ev.title}“ samt Wiederholungen löschen?`))this.request("event_delete",{event_id:ev.id});},"btn secondary danger"));r.append(buttons);return r;
+  }
+  renderCalendar(page) {
+    const section=this.el("section","panel");section.append(this.cardTitle("Familienkalender"));
+    const bar=this.el("div","calbar"),move=this.el("div","actions");
+    move.append(this.button("‹",()=>{this.changeCalendar(-1);},"btn secondary"),this.button("Heute",()=>{this.calendarAnchor=new Date();this.render();},"btn secondary"),this.button("›",()=>{this.changeCalendar(1);},"btn secondary"));bar.append(move);
+    const d=this.calendarAnchor;
+    const label=this.calendarMode==="month"?d.toLocaleDateString("de-AT",{month:"long",year:"numeric"}):this.calendarMode==="week"?`Woche ab ${this.dateLabel(this.isoDate(this.monday(d)))}`:this.dateLabel(this.isoDate(d));
+    bar.append(this.el("strong",null,label));
+    const modes=this.el("div","actions");[["day","Tag"],["week","Woche"],["month","Monat"]].forEach(([key,text])=>modes.append(this.button(text,()=>{this.calendarMode=key;this.render();},`btn ${key===this.calendarMode?"":"secondary"}`)));bar.append(modes);section.append(bar);
+    section.append(this.button(this.editEvent?"Bearbeitung abbrechen":"+ Termin hinzufügen",()=>{const d=this.isoDate(this.calendarAnchor);this.editEvent=this.editEvent?null:{title:"",description:"",start:`${d}T09:00`,end:`${d}T10:00`,all_day:false,repeat:"none",members:[]};this.render();}));
+    if(this.editEvent)section.append(this.eventForm());
+    let first,last;
+    if(this.calendarMode==="month"){
+      first=this.monday(new Date(d.getFullYear(),d.getMonth(),1));last=this.addDays(this.monday(new Date(d.getFullYear(),d.getMonth()+1,0)),6);
+      const grid=this.el("div","calgrid");["Mo","Di","Mi","Do","Fr","Sa","So"].forEach(v=>grid.append(this.el("div","calhead",v)));
+      const entries=this.occurrences(this.isoDate(first),this.isoDate(last));
+      for(let date=new Date(first);date<=last;date=this.addDays(date,1)){
+        const iso=this.isoDate(date),cell=this.el("div",`calday ${date.getMonth()!==d.getMonth()?"outside":""}`);
+        const day=this.button(String(date.getDate()),()=>{this.calendarAnchor=new Date(date);this.calendarMode="day";this.render();},"btn secondary");day.style.padding="3px 7px";cell.append(day);
+        const dayEntries=entries.filter(o=>o.start<=iso&&o.end>=iso);
+        dayEntries.slice(0,3).forEach(o=>{const e=this.button(`${o.time?o.time+" ":""}${o.event.title}`,()=>{this.calendarAnchor=new Date(date);this.calendarMode="day";this.render();},"calentry");e.style.borderLeftColor=this.eventColor(o.event);cell.append(e);});
+        if(dayEntries.length>3)cell.append(this.el("div","small",`+${dayEntries.length-3} weitere`));grid.append(cell);
+      }
+      section.append(grid);
+    } else {
+      first=this.calendarMode==="week"?this.monday(d):d;last=this.calendarMode==="week"?this.addDays(first,6):d;
+      const entries=this.occurrences(this.isoDate(first),this.isoDate(last));const stack=this.el("div","calweek");
+      for(let date=new Date(first);date<=last;date=this.addDays(date,1)){
+        const iso=this.isoDate(date),day=this.el("div");day.append(this.el("div","caldate",date.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long"})));
+        const daily=entries.filter(o=>o.start<=iso&&o.end>=iso);if(!daily.length)day.append(this.el("div","small","Keine Termine"));else daily.forEach(o=>day.append(this.eventRow(o)));
+        stack.append(day);
+      }section.append(stack);
+    }
+    section.append(this.el("p","small","Wiederholungen gelten für die gesamte Terminserie. Termine werden lokal gespeichert; Google- und HA-Kalender-Synchronisierung folgt später."));page.append(section);
+  }
+  changeCalendar(delta) {
+    const d=this.calendarAnchor;
+    this.calendarAnchor=this.calendarMode==="month"?this.monthStep(d,delta):this.addDays(d,delta*(this.calendarMode==="week"?7:1));this.render();
+  }
+  eventForm() {
+    const event=this.editEvent,form=this.el("form","formgrid");
+    const name=this.input("Termin","text",event.title,"title");name.querySelector("input").required=true;
+    const all=this.el("label","field");all.append(this.el("span",null,"Art"));const allSelect=this.el("select");[["false","Mit Uhrzeit"],["true","Ganztägig"]].forEach(([v,label])=>{const o=this.el("option",null,label);o.value=v;allSelect.append(o);});allSelect.value=String(event.all_day);all.append(allSelect);
+    const start=this.input("Beginn",event.all_day?"date":"datetime-local",event.start,"start");const end=this.input("Ende (einschließlich bei ganztägig)",event.all_day?"date":"datetime-local",event.end,"end");
+    const syncType=()=>{const flag=allSelect.value==="true";for(const field of [start,end]){const inp=field.querySelector("input");const val=inp.value;inp.type=flag?"date":"datetime-local";inp.value=flag?val.slice(0,10):`${val.slice(0,10)}T09:00`;}};
+    allSelect.addEventListener("change",syncType);
+    const rep=this.el("label","field");rep.append(this.el("span",null,"Wiederholung"));const repeat=this.el("select");[["none","Keine"],["daily","Täglich"],["weekly","Wöchentlich"],["monthly","Monatlich"],["yearly","Jährlich"]].forEach(([v,label])=>{const o=this.el("option",null,label);o.value=v;repeat.append(o);});repeat.value=event.repeat;rep.append(repeat);
+    const desc=this.el("label","field full");desc.append(this.el("span",null,"Beschreibung (optional)"));const textarea=this.el("textarea");textarea.value=event.description;textarea.maxLength=1500;desc.append(textarea);
+    const assigned=this.el("fieldset","field full");assigned.style.border="0";assigned.style.padding="0";assigned.append(this.el("legend",null,"Für Familienmitglieder (mehrere möglich)"));const checks=[];
+    this.data.members.forEach(m=>{const lab=this.el("label","person-choice");const ch=this.el("input");ch.type="checkbox";ch.value=m.id;ch.checked=event.members.includes(m.id);checks.push(ch);lab.append(ch,this.el("span",null,m.name));assigned.append(lab);});
+    const submit=this.el("button","btn","Termin speichern");submit.type="submit";form.append(name,all,start,end,rep,desc,assigned,submit);
+    form.addEventListener("submit",e=>{e.preventDefault();this.request("event_save",{event_id:event.id||"",title:name.querySelector("input").value,description:textarea.value,start:start.querySelector("input").value,end:end.querySelector("input").value,all_day:allSelect.value==="true",repeat:repeat.value,members:checks.filter(c=>c.checked).map(c=>c.value)});});
+    return form;
   }
   renderMembers(page) {
     const card=this.el("section","panel");card.append(this.cardTitle("Familienmitglieder"));

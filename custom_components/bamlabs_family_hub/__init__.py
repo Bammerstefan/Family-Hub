@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -52,7 +52,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", [])}
     lock = asyncio.Lock()
     hass.data[DOMAIN] = {"state": state, "store": store, "lock": lock}
 
@@ -67,7 +67,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.1.0",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.2.0",
             require_admin=True,
         )
         hass.data[DOMAIN]["panel_registered"] = True
@@ -144,6 +144,8 @@ async def ws_member_delete(hass, connection, msg):
             return
         for task in hub["state"]["tasks"]:
             task["assignees"] = [i for i in task.get("assignees", []) if i != msg["member_id"]]
+        for event in hub["state"]["events"]:
+            event["members"] = [i for i in event.get("members", []) if i != msg["member_id"]]
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
@@ -222,8 +224,97 @@ async def ws_task_delete(hass, connection, msg):
         connection.send_result(msg["id"], hub["state"])
 
 
+
+
+def _event_time(value, all_day=False):
+    """Validate ISO local times; all-day events use plain YYYY-MM-DD."""
+    if not isinstance(value, str):
+        raise ValueError("Ungültige Zeitangabe")
+    try:
+        if all_day:
+            return date.fromisoformat(value).isoformat()
+        parsed = datetime.fromisoformat(value)
+        if parsed.tzinfo is not None:
+            raise ValueError("Lokale Uhrzeit ohne Zeitzone verwenden")
+        if len(value) != 16 or value[10] != "T":
+            raise ValueError("Datum und Uhrzeit fehlen")
+        return parsed.isoformat(timespec="minutes")
+    except (ValueError, TypeError) as err:
+        raise ValueError("Ungültiges Datum oder ungültige Uhrzeit") from err
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/event_save",
+    vol.Optional("event_id", default=""): str,
+    vol.Required("title"): str,
+    vol.Optional("description", default=""): str,
+    vol.Required("start"): str,
+    vol.Required("end"): str,
+    vol.Required("all_day"): bool,
+    vol.Required("repeat"): vol.In(["none", "daily", "weekly", "monthly", "yearly"]),
+    vol.Required("members"): [str],
+})
+@websocket_api.async_response
+async def ws_event_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Keine Berechtigung")
+        return
+    try:
+        title = _text(msg["title"], 160)
+        description = msg["description"]
+        if not isinstance(description, str) or len(description) > 1500:
+            raise ValueError("Beschreibung zu lang")
+        all_day = msg["all_day"]
+        start = _event_time(msg["start"], all_day)
+        end = _event_time(msg["end"], all_day)
+        if end < start:
+            raise ValueError("Das Enddatum darf nicht vor dem Start liegen")
+        members = list(dict.fromkeys(msg["members"]))
+        if len(members) > 30:
+            raise ValueError("Zu viele Personen")
+    except (ValueError, TypeError) as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        member_ids = {m["id"] for m in hub["state"]["members"]}
+        if any(m not in member_ids for m in members):
+            connection.send_error(msg["id"], "invalid_data", "Unbekanntes Familienmitglied")
+            return
+        events = hub["state"]["events"]
+        event = next((e for e in events if e["id"] == msg["event_id"]), None) if msg["event_id"] else None
+        if msg["event_id"] and event is None:
+            connection.send_error(msg["id"], "not_found", "Termin nicht gefunden")
+            return
+        fields = {"title": title, "description": description.strip(), "start": start,
+                  "end": end, "all_day": all_day, "repeat": msg["repeat"], "members": members}
+        if event:
+            event.update(fields)
+        else:
+            events.append({"id": uuid4().hex, **fields})
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], hub["state"])
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/event_delete", vol.Required("event_id"): str})
+@websocket_api.async_response
+async def ws_event_delete(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Keine Berechtigung")
+        return
+    async with hub["lock"]:
+        events = hub["state"]["events"]
+        if not any(e["id"] == msg["event_id"] for e in events):
+            connection.send_error(msg["id"], "not_found", "Termin nicht gefunden")
+            return
+        hub["state"]["events"] = [e for e in events if e["id"] != msg["event_id"]]
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], hub["state"])
+
+
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register commands once before config entry load."""
-    for command in (ws_state, ws_member_save, ws_member_delete, ws_task_save, ws_task_toggle, ws_task_delete):
+    for command in (ws_state, ws_member_save, ws_member_delete, ws_task_save, ws_task_toggle, ws_task_delete, ws_event_save, ws_event_delete):
         websocket_api.async_register_command(hass, command)
     return True

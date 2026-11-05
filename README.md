@@ -1,35 +1,23 @@
-# BamLabs Family Hub v0.1.0 (Testversion)
+# BamLabs Family Hub v0.2.0
 
-Kostenlose, eigenständige Home-Assistant-Integration zur lokalen Verwaltung von Familienmitgliedern und Aufgaben.
+Kostenlose Home-Assistant-Integration: Familienmitglieder, Aufgaben und Familienkalender.
 
-## Funktionen
-- Home Assistant Einrichtungsdialog (Config Flow)
-- Eigenes Panel im Seitenmenü: **Family Hub**
-- Familienmitglieder mit Name und Farbe erstellen, ändern, löschen
-- Aufgaben mit Priorität, Fälligkeitsdatum, Beschreibung und mehreren Zuständigen
-- Aufgaben abschließen, wieder öffnen, bearbeiten und löschen
-- Tagesübersicht mit offenen und fälligen Aufgaben
-- Lokal gespeicherte Daten über Home Assistants Store (`.storage/bamlabs_family_hub.data`)
-- Responsive Ansicht für Mobilgeräte und Tablets
+## Installation / Update
+1. Home-Assistant-Backup erstellen.
+2. `custom_components/bamlabs_family_hub` aus dieser ZIP-Datei in das Home-Assistant-Konfigurationsverzeichnis kopieren und bestehende Dateien ersetzen.
+3. Home Assistant neu starten, die Browseroberfläche neu laden.
+4. Links **Family Hub** öffnen.
 
-## Installation (manuell für ersten Test)
-1. Vollständiges Home-Assistant-Backup erstellen.
-2. Den Ordner `custom_components/bamlabs_family_hub` nach `/config/custom_components/` kopieren.
-3. Home Assistant vollständig neu starten.
-4. **Einstellungen → Geräte & Dienste → Integration hinzufügen → BamLabs Family Hub** auswählen.
-5. Das Panel **Family Hub** in der Seitenleiste öffnen.
+Bestehende Familienmitglieder und Aufgaben bleiben in `.storage/bamlabs_family_hub.data` gespeichert. Die Datei **nicht löschen**.
 
-**Keine Veränderung** an der Integration `meal_planner` und am BamLabs License Manager.
+## Neu in 0.2.0
+- Eigener Familienkalender: Monats-, Wochen-, Tagesansicht.
+- Ganztägige und zeitlich begrenzte Termine.
+- Mehrfachzuordnung zu Familienmitgliedern mit Farbkennung.
+- Wiederholung täglich, wöchentlich, monatlich und jährlich (gesamte Serie).
+- Termine erstellen, bearbeiten und löschen.
+- Aktuelle Termine auf dem Dashboard.
 
-## Einschränkungen der 0.1.0
-- Erste Testversion, noch nicht auf einer echten Home-Assistant-Installation geprüft.
-- Aus Sicherheitsgründen ist das Panel derzeit nur für Administratoren sichtbar; Familienkonten/Rollen folgen später.
-- Kalenderanbindung, Push-Erinnerungen, Kinder-/Schulmodule und PRO-Lizenzen sind noch nicht implementiert.
-- Kalender und Termine werden nicht importiert, keine Cloud- oder Google-Verbindung.
-- Daten bleiben lokal; Backups erfolgen über Home Assistant.
+**Grenzen:** Keine Google-/Home-Assistant-Kalendersynchronisierung und keine Bearbeitung einzelner Wiederholungsinstanzen. Admin-Zugriff wie bisher. Lokale Speicherung.
 
-## GitHub/Marketplace
-Für ein eigenes Repository die ZIP-Inhalte in das Repository-Stammverzeichnis laden und eine Release-Version `v0.1.0` erstellen. Die Integration benötigt keine zusätzlichen Python-Bibliotheken.
-
-## Tests
-Python-Syntax und JavaScript-Syntax wurden überprüft. Ein Live-Test mit Home Assistant steht aus.
+**Testversion:** Syntaxprüfungen erfolgreich; Funktionstest in echter Home-Assistant-Installation erforderlich.
