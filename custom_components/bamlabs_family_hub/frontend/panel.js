@@ -1,4 +1,4 @@
-/* BamLabs Family Hub 0.2.0 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.2.1 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();

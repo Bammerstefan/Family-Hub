@@ -54,9 +54,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data = {}
     state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", [])}
     lock = asyncio.Lock()
-    hass.data[DOMAIN] = {"state": state, "store": store, "lock": lock}
+    hub_data = hass.data.setdefault(DOMAIN, {})
+    hub_data.update({"state": state, "store": store, "lock": lock})
 
-    if not hass.data[DOMAIN].get("panel_registered"):
+    # Register websocket commands when the config entry loads, rather than
+    # relying exclusively on async_setup. This also fixes updates where the
+    # frontend loads the new calendar form but event_save is unknown.
+    _register_commands_once(hass)
+
+    if not hub_data.get("panel_registered"):
         path = Path(__file__).parent / "frontend"
         await hass.http.async_register_static_paths([
             StaticPathConfig(f"/{DOMAIN}_static", str(path), cache_headers=False)
@@ -67,10 +73,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.2.0",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.2.1",
             require_admin=True,
         )
-        hass.data[DOMAIN]["panel_registered"] = True
+        hub_data["panel_registered"] = True
 
     return True
 
@@ -79,7 +85,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload panel and retain local stored data."""
     from homeassistant.components.frontend import async_remove_panel
     async_remove_panel(hass, PANEL_URL, warn_if_unknown=True)
-    hass.data.pop(DOMAIN, None)
+    hub = hass.data.get(DOMAIN)
+    if hub is not None:
+        hub.pop("state", None)
+        hub.pop("store", None)
+        hub.pop("lock", None)
+        hub["panel_registered"] = False
     return True
 
 
@@ -313,8 +324,21 @@ async def ws_event_delete(hass, connection, msg):
         connection.send_result(msg["id"], hub["state"])
 
 
-async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register commands once before config entry load."""
-    for command in (ws_state, ws_member_save, ws_member_delete, ws_task_save, ws_task_toggle, ws_task_delete, ws_event_save, ws_event_delete):
+def _register_commands_once(hass: HomeAssistant) -> None:
+    """Ensure all websocket commands are available to the configured panel."""
+    hub_data = hass.data.setdefault(DOMAIN, {})
+    if hub_data.get("commands_registered"):
+        return
+    for command in (
+        ws_state, ws_member_save, ws_member_delete,
+        ws_task_save, ws_task_toggle, ws_task_delete,
+        ws_event_save, ws_event_delete,
+    ):
         websocket_api.async_register_command(hass, command)
+    hub_data["commands_registered"] = True
+
+
+async def async_setup(hass: HomeAssistant, config: dict) -> bool:
+    """Register commands during regular integration setup as well."""
+    _register_commands_once(hass)
     return True
