@@ -1,28 +1,16 @@
-# BamLabs Family Hub v0.2.1
+# BamLabs Family Hub v0.3.0 (Testversion)
 
-Kostenlose Home-Assistant-Integration: Familienmitglieder, Aufgaben und Familienkalender.
+Familienmitglieder, Aufgaben, eigener Familienkalender und **lesende Einbindung vorhandener Home-Assistant-Kalender**.
 
-## Fix in 0.2.1
-- Kalenderbefehle werden beim Laden des Konfigurationseintrags zuverlässig registriert.
-- Browser-Cache-Busting auf 0.2.1 erhöht.
-- Familienmitglieder, Aufgaben und Termine bleiben unverändert gespeichert.
-
-## Installation / Update
+## Installation
 1. Home-Assistant-Backup erstellen.
-2. `custom_components/bamlabs_family_hub` aus dieser ZIP-Datei in das Home-Assistant-Konfigurationsverzeichnis kopieren und bestehende Dateien ersetzen.
-3. Home Assistant neu starten, die Browseroberfläche neu laden.
-4. Links **Family Hub** öffnen.
+2. `custom_components/bamlabs_family_hub` aus dieser ZIP nach `/config/custom_components/` kopieren und Dateien ersetzen.
+3. Home Assistant vollständig neu starten und die Family-Hub-Oberfläche neu laden.
+4. Im Family-Hub-Kalender vorhandene Kalender auswählen und `Auswahl speichern` klicken.
 
-Bestehende Familienmitglieder und Aufgaben bleiben in `.storage/bamlabs_family_hub.data` gespeichert. Die Datei **nicht löschen**.
+**Wichtig:** Diese Version liest Termine aus Home Assistant, schreibt oder löscht dort nichts. Externe Kalender werden nicht dupliziert. Zum Anzeigen eines Google-Kalenders muss dieser zuerst in Home Assistant als Kalender-Entität vorhanden sein. Eine automatische bidirektionale Synchronisation ist noch nicht enthalten.
 
-## Enthalten in 0.2.1
-- Eigener Familienkalender: Monats-, Wochen-, Tagesansicht.
-- Ganztägige und zeitlich begrenzte Termine.
-- Mehrfachzuordnung zu Familienmitgliedern mit Farbkennung.
-- Wiederholung täglich, wöchentlich, monatlich und jährlich (gesamte Serie).
-- Termine erstellen, bearbeiten und löschen.
-- Aktuelle Termine auf dem Dashboard.
+Bestehende Mitglieder, Aufgaben und Family-Hub-Termine bleiben in der bisherigen `.storage`-Datei gespeichert. Nicht deinstallieren oder die Datenbank löschen.
 
-**Grenzen:** Keine Google-/Home-Assistant-Kalendersynchronisierung und keine Bearbeitung einzelner Wiederholungsinstanzen. Admin-Zugriff wie bisher. Lokale Speicherung.
-
-**Testversion:** Syntaxprüfungen erfolgreich; Funktionstest in echter Home-Assistant-Installation erforderlich.
+## Tests
+Python-Syntax, JS-Syntax und Archivstruktur werden geprüft. Der Live-Test auf deiner Home-Assistant-Version steht noch aus.

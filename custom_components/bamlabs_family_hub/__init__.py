@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from homeassistant.util import dt as dt_util
 from pathlib import Path
 from uuid import uuid4
 
@@ -52,7 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock})
@@ -73,7 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.2.1",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.0",
             require_admin=True,
         )
         hub_data["panel_registered"] = True
@@ -324,6 +325,101 @@ async def ws_event_delete(hass, connection, msg):
         connection.send_result(msg["id"], hub["state"])
 
 
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/calendar_sources"})
+@websocket_api.async_response
+async def ws_calendar_sources(hass, connection, msg):
+    """List readable HA calendar entities for Family Hub."""
+    if not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    entities = [
+        {"id": state.entity_id, "name": state.name or state.entity_id}
+        for state in hass.states.async_all("calendar")
+        if state.state not in ("unavailable", "unknown")
+    ]
+    connection.send_result(msg["id"], sorted(entities, key=lambda e: e["name"].lower()))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/calendar_select",
+    vol.Required("entity_ids"): [str],
+})
+@websocket_api.async_response
+async def ws_calendar_select(hass, connection, msg):
+    """Save selected external calendars without altering their events."""
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Keine Berechtigung")
+        return
+    ids = list(dict.fromkeys(msg["entity_ids"]))
+    if len(ids) > 25 or any(not ent.startswith("calendar.") or hass.states.get(ent) is None for ent in ids):
+        connection.send_error(msg["id"], "invalid_calendars", "Ungültige Kalenderauswahl")
+        return
+    async with hub["lock"]:
+        hub["state"]["external_calendars"] = ids
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], hub["state"])
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/calendar_events",
+    vol.Required("start"): str,
+    vol.Required("end"): str,
+})
+@websocket_api.async_response
+async def ws_calendar_events(hass, connection, msg):
+    """Fetch selected Home Assistant calendars read-only in a bounded window."""
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Keine Berechtigung")
+        return
+    try:
+        start_date = date.fromisoformat(msg["start"])
+        end_date = date.fromisoformat(msg["end"])
+    except (TypeError, ValueError):
+        connection.send_error(msg["id"], "invalid_date", "Ungültiger Kalenderzeitraum")
+        return
+    if end_date < start_date or (end_date - start_date).days > 62:
+        connection.send_error(msg["id"], "invalid_range", "Maximal 63 Tage pro Abfrage")
+        return
+    selected = hub["state"].get("external_calendars", [])
+    if not selected:
+        connection.send_result(msg["id"], {"events": [], "warnings": []})
+        return
+    zone = dt_util.get_time_zone(hass.config.time_zone)
+    start = datetime.combine(start_date, datetime.min.time(), tzinfo=zone)
+    end = datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=zone)
+    try:
+        # Supported HA calendar service, returning expansion of recurring events.
+        response = await hass.services.async_call(
+            "calendar", "get_events",
+            {"entity_id": selected, "start_date_time": start.isoformat(), "end_date_time": end.isoformat()},
+            blocking=True, return_response=True,
+        )
+    except Exception as exc:
+        connection.send_error(msg["id"], "calendar_unavailable", "Kalender konnten nicht geladen werden; Home-Assistant-Protokoll prüfen")
+        return
+    results = []
+    for entity_id in selected:
+        entries = (response or {}).get(entity_id, {}).get("events", [])
+        for item in entries[:500]:
+            start_val = item.get("start", "")
+            end_val = item.get("end", "")
+            if isinstance(start_val, (datetime, date)):
+                start_val = start_val.isoformat()
+            if isinstance(end_val, (datetime, date)):
+                end_val = end_val.isoformat()
+            if not isinstance(start_val, str) or not isinstance(end_val, str) or not start_val:
+                continue
+            results.append({
+                "calendar": entity_id, "title": str(item.get("summary", "Termin"))[:180],
+                "description": str(item.get("description", "") or "")[:1500],
+                "start": start_val, "end": end_val,
+                "all_day": len(start_val) == 10,
+            })
+    connection.send_result(msg["id"], {"events": results[:1000], "warnings": []})
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
@@ -333,6 +429,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_event_save, ws_event_delete,
+        ws_calendar_sources, ws_calendar_select, ws_calendar_events,
     ):
         websocket_api.async_register_command(hass, command)
     hub_data["commands_registered"] = True

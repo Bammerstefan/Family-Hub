@@ -1,9 +1,14 @@
-/* BamLabs Family Hub 0.2.1 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.3.0 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {members: [], tasks: [], events: []};
+    this.data = {members: [], tasks: [], events: [], external_calendars: []};
+    this.externalEvents = [];
+    this.externalSources = [];
+    this.externalError = "";
+    this.externalBusy = false;
+    this.externalRange = "";
     this.calendarMode = "month";
     this.calendarAnchor = new Date();
     this.editEvent = null;
@@ -25,6 +30,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       this.data = await this._hass.callWS({type:"bamlabs_family_hub/state"});
       this.loaded = true;
       this.error = "";
+      this.loadCalendarSources();
+      this.refreshExternalEvents();
     } catch(e) { this.error = e.message || String(e); }
     finally { this.busy = false; this.render(); }
   }
@@ -39,6 +46,36 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       this.editEvent = null;
     } catch(e) { this.error = e.message || String(e); }
     finally { this.busy = false; this.render(); }
+  }
+  async loadCalendarSources() {
+    if (!this._hass) return;
+    try { this.externalSources = await this._hass.callWS({type:"bamlabs_family_hub/calendar_sources"}); this.render(); }
+    catch(e) { this.externalError = e.message || String(e); this.render(); }
+  }
+  async selectCalendars(ids) {
+    if (!this._hass || this.externalBusy) return;
+    this.externalBusy = true;
+    try {
+      this.data = await this._hass.callWS({type:"bamlabs_family_hub/calendar_select", entity_ids:ids});
+      this.externalEvents = []; this.externalRange = ""; this.externalError = "";
+    } catch(e) { this.externalError = e.message || String(e); }
+    finally { this.externalBusy = false; this.render(); this.refreshExternalEvents(); }
+  }
+  async refreshExternalEvents(force=false) {
+    if (!this._hass || !this.loaded || this.externalBusy) return;
+    const a=this.calendarAnchor;
+    const start=this.addDays(this.monday(new Date(a.getFullYear(),a.getMonth(),1)),-7);
+    const end=this.addDays(this.monday(new Date(a.getFullYear(),a.getMonth()+1,0)),13);
+    const from=this.isoDate(start), to=this.isoDate(end), range=`${from}|${to}`;
+    if (!force && this.externalRange===range) return;
+    if (!(this.data.external_calendars||[]).length) { this.externalEvents=[];this.externalRange=range;this.render();return; }
+    this.externalBusy = true;
+    try {
+      const result = await this._hass.callWS({type:"bamlabs_family_hub/calendar_events", start:from, end:to});
+      this.externalEvents = result.events || []; this.externalRange = range;
+      this.externalError = "";
+    } catch(e) { this.externalError = e.message || String(e); }
+    finally { this.externalBusy = false; this.render(); }
   }
   el(tag, cls, value) {
     const node=document.createElement(tag);
@@ -72,10 +109,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const page=this.el("main","page");
     const header=this.el("div","top");
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
-    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.2.0"));page.append(header);
+    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.3.0"));page.append(header);
     const nav=this.el("nav","nav");
     [["today","Übersicht"],["calendar","Kalender"],["tasks","Aufgaben"],["members","Familie"]].forEach(([id,label])=>{
-      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();},`tab ${this.tab===id?"selected":""}`));
+      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if(id==="calendar")this.refreshExternalEvents();},`tab ${this.tab===id?"selected":""}`));
     });page.append(nav);
     if(this.error) page.append(this.el("div","notice",`Hinweis: ${this.error}`));
     if(!this.loaded) {page.append(this.el("div","panel",this.busy?"Daten werden geladen …":"Keine Verbindung zu Family Hub. Bitte Integration prüfen."));root.append(page);return;}
@@ -141,20 +178,47 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         } else break;
       }
     }
+    for(const ext of this.externalEvents) {
+      if(!ext.start || !ext.end)continue;
+      const start=ext.start.slice(0,10);
+      // HA/ICS all-day end is exclusive, unlike Family Hub's inclusive end.
+      let last=ext.end.slice(0,10);
+      if(ext.all_day && last>start) last=this.isoDate(this.addDays(new Date(`${last}T00:00:00`),-1));
+      if(last<from || start>to)continue;
+      const ev={id:"external",title:ext.title,description:ext.description||"",members:[],
+        start:ext.start,end:ext.end,all_day:ext.all_day,external:true,source:ext.calendar};
+      out.push({event:ev,start,end:last,time:ext.all_day?"":ext.start.slice(11,16)});
+    }
     return out.sort((a,b)=>(a.start+a.time).localeCompare(b.start+b.time));
   }
-  eventColor(ev) {return this.data.members.find(m=>(ev.members||[]).includes(m.id))?.color||"#1464db";}
+  eventColor(ev) {return ev.external?"#16a085":(this.data.members.find(m=>(ev.members||[]).includes(m.id))?.color||"#1464db");}
   eventRow(o) {
     const ev=o.event;const r=this.el("div","item");const dot=this.el("span","dot");dot.style.background=this.eventColor(ev);r.append(dot);
     const body=this.el("div","item-main");body.append(this.el("div","item-title",ev.title));
-    const meta=[`${this.dateLabel(o.start)}${o.end!==o.start?" – "+this.dateLabel(o.end):""}`,ev.all_day?"Ganztägig":ev.start.slice(11,16)+" – "+ev.end.slice(11,16),...ev.members.map(id=>this.memberName(id))];
+    const meta=[`${this.dateLabel(o.start)}${o.end!==o.start?" – "+this.dateLabel(o.end):""}`,ev.all_day?"Ganztägig":ev.start.slice(11,16)+" – "+ev.end.slice(11,16),...(ev.external?[`Home Assistant: ${ev.source}`]:ev.members.map(id=>this.memberName(id)))];
     body.append(this.el("div","small",meta.join(" · ")));
     if(ev.description)body.append(this.el("div","desc",ev.description));r.append(body);
+    if(ev.external){r.append(this.el("span","chip","Nur lesen"));return r;}
     const buttons=this.el("div","actions");buttons.append(this.button("✎",()=>{this.tab="calendar";this.editEvent={...ev,members:[...ev.members]};this.render();},"btn secondary"));
     buttons.append(this.button("×",()=>{if(confirm(`Termin „${ev.title}“ samt Wiederholungen löschen?`))this.request("event_delete",{event_id:ev.id});},"btn secondary danger"));r.append(buttons);return r;
   }
   renderCalendar(page) {
     const section=this.el("section","panel");section.append(this.cardTitle("Familienkalender"));
+    const extCard=this.el("div","panel");extCard.append(this.el("strong",null,"Home-Assistant-Kalender einblenden"));
+    extCard.append(this.el("p","small","Bestehende Kalender auswählen. Termine erscheinen hier nur lesend; Änderungen erfolgen weiterhin im ursprünglichen Kalender."));
+    if(this.externalError) extCard.append(this.el("div","notice",this.externalError));
+    if(this.externalBusy) extCard.append(this.el("div","small","Kalender werden geladen …"));
+    const selections=[];
+    for(const src of this.externalSources){
+      const lab=this.el("label","person-choice");const check=this.el("input");check.type="checkbox";
+      check.value=src.id;check.checked=(this.data.external_calendars||[]).includes(src.id);
+      selections.push(check);lab.append(check,this.el("span",null,src.name));extCard.append(lab);
+    }
+    if(!this.externalSources.length)extCard.append(this.el("p","small","Keine Home-Assistant-Kalender gefunden. Lege zuerst unter Geräte & Dienste einen Kalender an."));
+    const controls=this.el("div","actions");
+    controls.append(this.button("Auswahl speichern",()=>this.selectCalendars(selections.filter(c=>c.checked).map(c=>c.value)),"btn secondary"));
+    controls.append(this.button("Termine aktualisieren",()=>this.refreshExternalEvents(true),"btn secondary"));
+    extCard.append(controls);section.append(extCard);
     const bar=this.el("div","calbar"),move=this.el("div","actions");
     move.append(this.button("‹",()=>{this.changeCalendar(-1);},"btn secondary"),this.button("Heute",()=>{this.calendarAnchor=new Date();this.render();},"btn secondary"),this.button("›",()=>{this.changeCalendar(1);},"btn secondary"));bar.append(move);
     const d=this.calendarAnchor;
@@ -185,11 +249,11 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         stack.append(day);
       }section.append(stack);
     }
-    section.append(this.el("p","small","Wiederholungen gelten für die gesamte Terminserie. Termine werden lokal gespeichert; Google- und HA-Kalender-Synchronisierung folgt später."));page.append(section);
+    section.append(this.el("p","small","Wiederholungen gelten für die gesamte Terminserie. Termine werden lokal gespeichert; Home-Assistant-Kalender werden lesend eingeblendet. Google-Kalender müssen vorher in Home Assistant eingerichtet sein."));page.append(section);
   }
   changeCalendar(delta) {
     const d=this.calendarAnchor;
-    this.calendarAnchor=this.calendarMode==="month"?this.monthStep(d,delta):this.addDays(d,delta*(this.calendarMode==="week"?7:1));this.render();
+    this.calendarAnchor=this.calendarMode==="month"?this.monthStep(d,delta):this.addDays(d,delta*(this.calendarMode==="week"?7:1));this.render();this.refreshExternalEvents();
   }
   eventForm() {
     const event=this.editEvent,form=this.el("form","formgrid");
@@ -259,6 +323,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(t.priority==="high")tags.append(this.el("span","chip tag-high","Wichtig"));
     t.assignees.forEach(id=>{const member=this.data.members.find(m=>m.id===id);if(member){const chip=this.el("span","chip",member.name);chip.style.borderLeft=`4px solid ${member.color}`;tags.append(chip);}});
     main.append(tags);r.append(main);
+    if(ev.external){r.append(this.el("span","chip","Nur lesen"));return r;}
     const buttons=this.el("div","actions");buttons.append(this.button("✎",()=>{this.tab="tasks";this.editTask={...t,assignees:[...t.assignees]};this.render();},"btn secondary"));
     buttons.append(this.button("×",()=>{if(confirm(`Aufgabe „${t.title}“ wirklich löschen?`))this.request("task_delete",{task_id:t.id});},"btn secondary danger"));r.append(buttons);return r;
   }
