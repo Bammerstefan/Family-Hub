@@ -1,0 +1,2 @@
+Family Hub v0.3.3 – Versionsanzeige und Panel-URL korrigiert.
+Nach dem Update Home Assistant vollstaendig neu starten und Browser neu laden.

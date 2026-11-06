@@ -135,7 +135,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const page=this.el("main","page");
     const header=this.el("div","top");
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
-    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.3.2"));page.append(header);
+    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.3.3"));page.append(header);
     const nav=this.el("nav","nav");
     const child = this.data._role === "child";
     const tabs = child ? [["today","🏡 Mein Tag"],["tasks","✅ Aufgaben"],["calendar","📅 Termine"]]
