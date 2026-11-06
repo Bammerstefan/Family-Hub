@@ -43,3 +43,8 @@ Der QR-Link verwendet die Adresse, über die du Family Hub im Browser geöffnet 
 7. Neustart von Home Assistant: Zuordnungen, Aufgaben und Termine weiterhin vorhanden.
 
 **Testversion:** Python- und JS-Syntax und ZIP-Inhalt wurden überprüft, nicht jedoch ein vollständiger Lauf in einer echten Home-Assistant-Instanz. Bitte zunächst mit Testkonten und ohne unnötig sensible Familieninformationen testen.
+
+
+## v0.3.3 – Einfacher Kalender-Assistent
+
+Unter **Einstellungen → Kalender verbinden** können bestehende Home-Assistant-Kalender mit einer klaren Schritt-für-Schritt-Anleitung ausgewählt werden. Bereits verbundene Kalender werden automatisch ungefähr alle fünf Minuten geladen, solange Family Hub geöffnet ist. Eine direkte Anmeldung mit Google oder ein eigener iCal-Import sind in dieser Version **noch nicht** enthalten.

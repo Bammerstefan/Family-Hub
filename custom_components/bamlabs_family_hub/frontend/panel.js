@@ -1,4 +1,4 @@
-/* BamLabs Family Hub 0.3.2 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.3.3 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -24,6 +24,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.childAccounts = null;
     this.qrFor = null;
     this.childForm = null;
+    this.showCalendarSetup = false;
   }
   connectedCallback() {
     // Refresh visible calendar data regularly while this panel is mounted.
@@ -330,7 +331,35 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   renderSettings(page) {
     const intro=this.el("section","panel");
     intro.append(this.cardTitle("⚙️ Einstellungen"));
-    intro.append(this.el("p",null,"Hier kannst du später alle Family-Hub-Einstellungen verwalten."));
+    intro.append(this.el("p",null,"Hier verbindest du Kalender und richtest den Handy-Zugang für Kinder ein."));
+    intro.append(this.el("h3",null,"📅 Kalender verbinden"));
+    intro.append(this.el("p","small","Du kannst Kalender anzeigen, die schon mit Home Assistant verbunden sind. Termine werden anschließend automatisch aktualisiert, solange Family Hub geöffnet ist."));
+    intro.append(this.button("📅 Kalender verbinden",()=>{this.showCalendarSetup=!this.showCalendarSetup;this.render();if(this.showCalendarSetup)this.loadCalendarSources();},"btn"));
+    if(this.showCalendarSetup){
+      const setup=this.el("div","panel");
+      setup.append(this.el("h3",null,"1. Wähle deinen Kalender"));
+      setup.append(this.el("p","small","Wenn dein Google-Kalender bereits unter Home Assistant → Geräte & Dienste eingerichtet ist, kannst du ihn gleich auswählen."));
+      if(this.externalError)setup.append(this.el("div","notice",this.externalError));
+      const selection=[];
+      for(const src of this.externalSources){
+        const line=this.el("label","person-choice");
+        const cb=this.el("input");cb.type="checkbox";cb.value=src.id;cb.checked=(this.data.external_calendars||[]).includes(src.id);
+        selection.push(cb);line.append(cb,this.el("span",null,src.name));setup.append(line);
+      }
+      if(!this.externalSources.length)setup.append(this.el("p","small","Noch keine Kalender gefunden? Dann öffne Home Assistant → Einstellungen → Geräte & Dienste → Integration hinzufügen und richte dort deinen Kalender ein. Kehre anschließend hierher zurück."));
+      const actions=this.el("div","actions");
+      actions.append(this.button("🔄 Kalender suchen",()=>this.loadCalendarSources(),"btn secondary"));
+      actions.append(this.button("✓ Auswahl speichern",async()=>{await this.selectCalendars(selection.filter(c=>c.checked).map(c=>c.value));},"btn"));
+      setup.append(actions);
+      setup.append(this.el("h3",null,"2. Google Kalender noch nicht verbunden?"));
+      setup.append(this.el("p","small","Die Google-Verbindung wird von Home Assistant eingerichtet. Öffne Einstellungen → Geräte & Dienste → Integration hinzufügen → Google Calendar. Folge den dortigen Schritten. Anschließend kommst du zurück und klickst auf „Kalender suchen“."));
+      setup.append(this.el("p","small","Hinweis: Eine direkte Anmeldung mit Google ist in Family Hub noch nicht verfügbar. Dafür ist eine eigene sichere Google-Anmeldeintegration nötig."));
+      setup.append(this.el("h3",null,"3. Automatische Aktualisierung"));
+      setup.append(this.el("p","small",this.externalLastSync?`Zuletzt geladen: ${this.externalLastSync.toLocaleString("de-AT",{dateStyle:"short",timeStyle:"short"})}`:"Noch keine erfolgreiche Aktualisierung."));
+      setup.append(this.el("p","small","Verbundene Kalender werden bei geöffnetem Family Hub ungefähr alle fünf Minuten aktualisiert. Termine werden nur angezeigt, nicht in Google verändert."));
+      setup.append(this.button("🔄 Termine jetzt laden",()=>this.refreshExternalEvents(true),"btn secondary"));
+      intro.append(setup);
+    }
     intro.append(this.el("h3",null,"📱 Kinder & Handy-Zugang"));
     intro.append(this.el("p","small","Jedes Kind bekommt einen persönlichen QR-Code. Der Code öffnet Family Hub auf dem Handy – ohne Passwort im QR-Code. Zur Anmeldung benötigt das Kind einmalig ein eigenes Home-Assistant-Konto ohne Administratorrechte."));
     intro.append(this.el("p","small","1. Unter Einstellungen → Personen → Benutzer ein eigenes normales Benutzerkonto für jedes Kind anlegen. 2. Hier das Konto mit dem Kind verbinden. 3. QR-Code mit dem Handy scannen und beim ersten Aufruf anmelden. Danach sieht das Kind nur seine zugewiesenen Aufgaben und Termine."));
