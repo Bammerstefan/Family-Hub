@@ -1,7 +1,7 @@
 {
   "domain": "bamlabs_family_hub",
   "name": "BamLabs Family Hub",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "documentation": "https://bamlabs.at/",
   "issue_tracker": "https://github.com/Bammerstefan/bamlabs-family-hub/issues",
   "codeowners": [
@@ -14,6 +14,6 @@
     "http"
   ],
   "iot_class": "local_push",
-  "requirements": [],
+  "requirements": ["qrcode==8.2"],
   "single_config_entry": true
 }

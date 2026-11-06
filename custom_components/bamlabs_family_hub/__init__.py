@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta
 from homeassistant.util import dt as dt_util
 from pathlib import Path
 from uuid import uuid4
+from urllib.parse import urlsplit
 
 import voluptuous as vol
 from homeassistant.components import panel_custom, websocket_api
@@ -53,7 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "child_users": data.get("child_users", {})}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock})
@@ -74,8 +75,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.1",
-            require_admin=True,
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.2",
+            require_admin=False,
         )
         hub_data["panel_registered"] = True
 
@@ -95,19 +96,42 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def _child_member(hub, connection):
+    """Return the member selected for this authenticated HA account, or None."""
+    user = connection.user
+    if not user or not user.is_active or user.is_admin:
+        return None
+    member_id = hub["state"].get("child_users", {}).get(user.id)
+    return member_id if member_id in {m["id"] for m in hub["state"]["members"]} else None
+
+
+def _visible_state(hub, connection):
+    """Never give a child's account other people's tasks, events or calendar sources."""
+    state = hub["state"]
+    if _owner(connection):
+        return {**state, "_role": "admin"}
+    member_id = _child_member(hub, connection)
+    if not member_id:
+        return None
+    return {"_role": "child", "_member_id": member_id,
+            "members": [m for m in state["members"] if m["id"] == member_id],
+            "tasks": [t for t in state["tasks"] if member_id in t.get("assignees", [])],
+            "events": [e for e in state["events"] if member_id in e.get("members", [])],
+            "external_calendars": []}
+
+
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})
 @websocket_api.async_response
 async def ws_state(hass, connection, msg):
-    """Return the current family state."""
     hub = hass.data.get(DOMAIN)
     if hub is None:
         connection.send_error(msg["id"], "not_ready", "Family Hub ist nicht eingerichtet")
         return
-    if not _owner(connection):
-        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+    result = _visible_state(hub, connection)
+    if result is None:
+        connection.send_error(msg["id"], "unauthorized", "Dein Benutzerkonto ist noch keinem Familienmitglied zugeordnet. Bitte frage deine Eltern.")
         return
-    async with hub["lock"]:
-        connection.send_result(msg["id"], hub["state"])
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command({
@@ -154,6 +178,9 @@ async def ws_member_delete(hass, connection, msg):
         if len(hub["state"]["members"]) == before:
             connection.send_error(msg["id"], "not_found", "Familienmitglied nicht gefunden")
             return
+        for uid, mid in list(hub["state"].get("child_users", {}).items()):
+            if mid == msg["member_id"]:
+                hub["state"]["child_users"].pop(uid, None)
         for task in hub["state"]["tasks"]:
             task["assignees"] = [i for i in task.get("assignees", []) if i != msg["member_id"]]
         for event in hub["state"]["events"]:
@@ -210,17 +237,20 @@ async def ws_task_save(hass, connection, msg):
 @websocket_api.async_response
 async def ws_task_toggle(hass, connection, msg):
     hub = hass.data.get(DOMAIN)
-    if hub is None or not _owner(connection):
+    if hub is None or (not _owner(connection) and not _child_member(hub, connection)):
         connection.send_error(msg["id"], "unauthorized", "Keine Berechtigung")
         return
     async with hub["lock"]:
         task = next((t for t in hub["state"]["tasks"] if t["id"] == msg["task_id"]), None)
+        if task and not _owner(connection) and _child_member(hub, connection) not in task.get("assignees", []):
+            connection.send_error(msg["id"], "unauthorized", "Das ist nicht deine Aufgabe")
+            return
         if task is None:
             connection.send_error(msg["id"], "not_found", "Aufgabe nicht gefunden")
             return
         task["done"] = not task.get("done", False)
         await hub["store"].async_save(hub["state"])
-        connection.send_result(msg["id"], hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/task_delete", vol.Required("task_id"): str})
@@ -420,6 +450,136 @@ async def ws_calendar_events(hass, connection, msg):
     connection.send_result(msg["id"], {"events": results[:1000], "warnings": []})
 
 
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/child_accounts"})
+@websocket_api.async_response
+async def ws_child_accounts(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern/Administratoren")
+        return
+    users = await hass.auth.async_get_users()
+    connection.send_result(msg["id"], {
+        "users": [{"id": u.id, "name": u.name or "Benutzer", "active": u.is_active}
+                  for u in users if u.is_active and not u.is_admin and not u.system_generated],
+        "assignments": hub["state"].get("child_users", {})})
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/child_assign",
+    vol.Required("member_id"): str,
+    vol.Required("user_id"): str,
+})
+@websocket_api.async_response
+async def ws_child_assign(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern/Administratoren")
+        return
+    member_id, user_id = msg["member_id"], msg["user_id"]
+    async with hub["lock"]:
+        if member_id not in {m["id"] for m in hub["state"]["members"]}:
+            connection.send_error(msg["id"], "invalid_data", "Unbekanntes Familienmitglied")
+            return
+        assignments = hub["state"].setdefault("child_users", {})
+        if user_id:
+            user = await hass.auth.async_get_user(user_id)
+            if user is None or not user.is_active or user.is_admin or user.system_generated:
+                connection.send_error(msg["id"], "invalid_data", "Bitte ein normales, aktives Home-Assistant-Konto auswählen")
+                return
+            # One Home Assistant account per child, one account cannot belong to multiple children.
+            assignments.pop(user_id, None)
+        for uid, mid in list(assignments.items()):
+            if mid == member_id:
+                assignments.pop(uid, None)
+        if user_id:
+            assignments[user_id] = member_id
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], {"assignments": dict(assignments)})
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/child_qr",
+    vol.Required("member_id"): str,
+    vol.Required("url"): str,
+})
+@websocket_api.async_response
+async def ws_child_qr(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern/Administratoren")
+        return
+    if msg["member_id"] not in {m["id"] for m in hub["state"]["members"]}:
+        connection.send_error(msg["id"], "invalid_data", "Unbekanntes Kind")
+        return
+    url = msg["url"]
+    parts = urlsplit(url)
+    if (len(url) > 500 or parts.scheme not in ("http", "https")
+            or parts.path != f"/{PANEL_URL}" or not parts.hostname
+            or parts.username or parts.password):
+        connection.send_error(msg["id"], "invalid_data", "Ungültige Home-Assistant-Adresse")
+        return
+    # SVG QR is only a shortcut to the normal Home Assistant login. It never contains tokens.
+    import qrcode
+    from qrcode.image.svg import SvgPathImage
+    qr = qrcode.make(url, image_factory=SvgPathImage, box_size=7, border=3)
+    import base64
+    connection.send_result(msg["id"], {"image": "data:image/svg+xml;base64," + base64.b64encode(qr.to_string()).decode("ascii")})
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/child_task_create",
+    vol.Required("title"): str,
+    vol.Optional("due", default=""): str,
+})
+@websocket_api.async_response
+async def ws_child_task_create(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    member_id = _child_member(hub, connection) if hub else None
+    if not member_id:
+        connection.send_error(msg["id"], "unauthorized", "Kein Kinderzugang")
+        return
+    try:
+        title, due = _text(msg["title"], 160), _optional_date(msg["due"])
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        hub["state"]["tasks"].append({"id": uuid4().hex, "title": title, "description": "",
+            "due": due, "priority": "normal", "assignees": [member_id], "done": False})
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/child_event_create",
+    vol.Required("title"): str,
+    vol.Required("start"): str,
+    vol.Required("end"): str,
+    vol.Required("all_day"): bool,
+})
+@websocket_api.async_response
+async def ws_child_event_create(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    member_id = _child_member(hub, connection) if hub else None
+    if not member_id:
+        connection.send_error(msg["id"], "unauthorized", "Kein Kinderzugang")
+        return
+    try:
+        title = _text(msg["title"], 160)
+        start = _event_time(msg["start"], msg["all_day"])
+        end = _event_time(msg["end"], msg["all_day"])
+        if end < start:
+            raise ValueError("Ende darf nicht vor dem Beginn liegen")
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        hub["state"]["events"].append({"id": uuid4().hex, "title": title, "description": "",
+            "start": start, "end": end, "all_day": msg["all_day"], "repeat": "none", "members": [member_id]})
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
@@ -430,6 +590,8 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_events,
+        ws_child_accounts, ws_child_assign, ws_child_qr,
+        ws_child_task_create, ws_child_event_create,
     ):
         websocket_api.async_register_command(hass, command)
     hub_data["commands_registered"] = True

@@ -1,4 +1,4 @@
-/* BamLabs Family Hub 0.3.1 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.3.2 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -21,6 +21,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.error = "";
     this.editMember = null;
     this.editTask = null;
+    this.childAccounts = null;
+    this.qrFor = null;
+    this.childForm = null;
   }
   connectedCallback() {
     // Refresh visible calendar data regularly while this panel is mounted.
@@ -46,8 +49,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       this.data = await this._hass.callWS({type:"bamlabs_family_hub/state"});
       this.loaded = true;
       this.error = "";
-      this.loadCalendarSources();
-      this.refreshExternalEvents();
+      if (this.data._role === "admin") {
+        this.loadCalendarSources();
+        this.refreshExternalEvents();
+      }
     } catch(e) { this.error = e.message || String(e); }
     finally { this.busy = false; this.render(); }
   }
@@ -78,7 +83,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     finally { this.externalBusy = false; this.render(); this.refreshExternalEvents(); }
   }
   async refreshExternalEvents(force=false) {
-    if (!this._hass || !this.loaded || this.externalBusy) return;
+    if (!this._hass || !this.loaded || this.externalBusy || this.data._role === "child") return;
     // Avoid repeated network requests when the user quickly changes views.
     if (force && Date.now() - this.externalLastAttempt < 15000) return;
     const a=this.calendarAnchor;
@@ -129,17 +134,25 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const page=this.el("main","page");
     const header=this.el("div","top");
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
-    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.3.1"));page.append(header);
+    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.3.2"));page.append(header);
     const nav=this.el("nav","nav");
-    [["today","Übersicht"],["calendar","Kalender"],["tasks","Aufgaben"],["members","Familie"]].forEach(([id,label])=>{
-      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if(id==="calendar")this.refreshExternalEvents(true);},`tab ${this.tab===id?"selected":""}`));
+    const child = this.data._role === "child";
+    const tabs = child ? [["today","🏡 Mein Tag"],["tasks","✅ Aufgaben"],["calendar","📅 Termine"]]
+                       : [["today","Übersicht"],["calendar","Kalender"],["tasks","Aufgaben"],["members","Familie"],["settings","⚙️ Einstellungen"]];
+    tabs.forEach(([id,label])=>{
+      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if(id==="calendar"&&!child)this.refreshExternalEvents(true);},`tab ${this.tab===id?"selected":""}`));
     });page.append(nav);
     if(this.error) page.append(this.el("div","notice",`Hinweis: ${this.error}`));
     if(!this.loaded) {page.append(this.el("div","panel",this.busy?"Daten werden geladen …":"Keine Verbindung zu Family Hub. Bitte Integration prüfen."));root.append(page);return;}
-    if(this.tab==="today") this.renderToday(page);
-    if(this.tab==="members") this.renderMembers(page);
-    if(this.tab==="calendar") this.renderCalendar(page);
-    if(this.tab==="tasks") this.renderTasks(page);
+    if(child){
+      this.renderChild(page);
+    }else{
+      if(this.tab==="today") this.renderToday(page);
+      if(this.tab==="members") this.renderMembers(page);
+      if(this.tab==="calendar") this.renderCalendar(page);
+      if(this.tab==="tasks") this.renderTasks(page);
+      if(this.tab==="settings") this.renderSettings(page);
+    }
     page.append(this.el("div","small footer","Daten werden lokal in Home Assistant gespeichert. PRO-Funktionen folgen in späteren Versionen."));
     root.append(page);
   }
@@ -294,6 +307,104 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     form.addEventListener("submit",e=>{e.preventDefault();this.request("event_save",{event_id:event.id||"",title:name.querySelector("input").value,description:textarea.value,start:start.querySelector("input").value,end:end.querySelector("input").value,all_day:allSelect.value==="true",repeat:repeat.value,members:checks.filter(c=>c.checked).map(c=>c.value)});});
     return form;
   }
+  async fetchChildAccounts() {
+    try {
+      this.childAccounts = await this._hass.callWS({type:"bamlabs_family_hub/child_accounts"});
+      this.error="";this.render();
+    } catch(e){this.error=e.message||String(e);this.render();}
+  }
+  async assignChildAccount(memberId, userId) {
+    try {
+      const result=await this._hass.callWS({type:"bamlabs_family_hub/child_assign",member_id:memberId,user_id:userId});
+      this.childAccounts.assignments=result.assignments;this.qrFor=null;this.error="";this.render();
+    }catch(e){this.error=e.message||String(e);this.render();}
+  }
+  async showChildQr(member) {
+    const url=new URL("/bamlabs-family-hub",window.location.origin);
+    url.searchParams.set("child",member.id);
+    try {
+      const response=await this._hass.callWS({type:"bamlabs_family_hub/child_qr",member_id:member.id,url:url.href});
+      this.qrFor={member:member.name,url:url.href,image:response.image};this.error="";this.render();
+    }catch(e){this.error=e.message||String(e);this.render();}
+  }
+  renderSettings(page) {
+    const intro=this.el("section","panel");
+    intro.append(this.cardTitle("⚙️ Einstellungen"));
+    intro.append(this.el("p",null,"Hier kannst du später alle Family-Hub-Einstellungen verwalten."));
+    intro.append(this.el("h3",null,"📱 Kinder & Handy-Zugang"));
+    intro.append(this.el("p","small","Jedes Kind bekommt einen persönlichen QR-Code. Der Code öffnet Family Hub auf dem Handy – ohne Passwort im QR-Code. Zur Anmeldung benötigt das Kind einmalig ein eigenes Home-Assistant-Konto ohne Administratorrechte."));
+    intro.append(this.el("p","small","1. Unter Einstellungen → Personen → Benutzer ein eigenes normales Benutzerkonto für jedes Kind anlegen. 2. Hier das Konto mit dem Kind verbinden. 3. QR-Code mit dem Handy scannen und beim ersten Aufruf anmelden. Danach sieht das Kind nur seine zugewiesenen Aufgaben und Termine."));
+    intro.append(this.button(this.childAccounts?"Benutzer neu laden":"Kinderkonten anzeigen",()=>this.fetchChildAccounts(),"btn secondary"));
+    page.append(intro);
+    if(!this.childAccounts)return;
+    const items=this.el("div","list");
+    for(const m of this.data.members){
+      const wrap=this.el("section","panel");
+      const head=this.el("div","item");const dot=this.el("span","dot");dot.style.background=m.color;
+      head.append(dot,this.el("strong",null,m.name));wrap.append(head);
+      const label=this.el("label","field");label.append(this.el("span","field-title","Home-Assistant-Konto für dieses Kind"));
+      const select=this.el("select");
+      const empty=this.el("option",null,"Noch nicht verbunden");empty.value="";select.append(empty);
+      this.childAccounts.users.forEach(u=>{const opt=this.el("option",null,u.name);opt.value=u.id;select.append(opt);});
+      const assigned=Object.entries(this.childAccounts.assignments).find(([,id])=>id===m.id)?.[0]||"";
+      select.value=assigned;
+      select.addEventListener("change",()=>this.assignChildAccount(m.id,select.value));label.append(select);wrap.append(label);
+      const buttons=this.el("div","actions");
+      const qrButton=this.button("📷 QR-Code anzeigen",()=>this.showChildQr(m));qrButton.disabled=!assigned;buttons.append(qrButton);wrap.append(buttons);
+      if(this.qrFor && this.qrFor.member===m.name){
+        const picture=this.el("img");picture.src=this.qrFor.image;picture.alt=`QR-Code für ${m.name}`;
+        picture.style.cssText="display:block;width:220px;max-width:100%;margin:16px auto;border-radius:12px;background:white;padding:12px";
+        wrap.append(picture);
+        wrap.append(this.el("p","small","Scannen und beim ersten Öffnen mit dem zugeordneten Home-Assistant-Konto anmelden."));
+        const link=this.el("a",null,"Link zum Kinderzugang öffnen");link.href=this.qrFor.url;link.target="_blank";link.rel="noopener noreferrer";wrap.append(link);
+      }
+      items.append(wrap);
+    }
+    page.append(items);
+  }
+  renderChild(page) {
+    const me=this.data.members[0];
+    const card=this.el("section","panel");
+    card.append(this.cardTitle(`👋 Hallo ${me?.name||"!"}!`));
+    card.append(this.el("p","small","Hier siehst du nur deine Aufgaben und Termine."));
+    page.append(card);
+    if(this.tab==="today" || this.tab==="tasks"){
+      const tasks=this.el("section","panel");tasks.append(this.cardTitle("✅ Meine Aufgaben"));
+      const open=this.data.tasks.filter(t=>!t.done);
+      if(!open.length)tasks.append(this.el("p","empty","Alles erledigt – super! 🎉"));
+      else open.forEach(t=>{
+        const item=this.el("div","item");
+        const check=this.el("input","check");check.type="checkbox";check.checked=!!t.done;
+        check.addEventListener("change",()=>this.request("task_toggle",{task_id:t.id}));
+        const details=this.el("div","item-main");details.append(this.el("strong",null,t.title));
+        if(t.due)details.append(this.el("div","small",`Bis ${this.dateLabel(t.due)}`));
+        item.append(check,details);tasks.append(item);
+      });
+      const add=this.button(this.childForm==="task"?"Abbrechen":"➕ Aufgabe eintragen",()=>{this.childForm=this.childForm==="task"?null:"task";this.render();});tasks.append(add);
+      if(this.childForm==="task"){
+        const form=this.el("form","formgrid");const title=this.input("Was möchtest du erledigen?","text","","title");title.querySelector("input").required=true;
+        const due=this.input("Bis wann? (freiwillig)","date","","due");const button=this.el("button","btn","Speichern");button.type="submit";
+        form.append(title,due,button);form.addEventListener("submit",e=>{e.preventDefault();this.childForm=null;this.request("child_task_create",{title:title.querySelector("input").value,due:due.querySelector("input").value});});tasks.append(form);
+      }
+      page.append(tasks);
+    }
+    if(this.tab==="today" || this.tab==="calendar"){
+      const box=this.el("section","panel");box.append(this.cardTitle("📅 Meine Termine"));
+      const events=[...(this.data.events||[])].sort((a,b)=>a.start.localeCompare(b.start));
+      if(!events.length)box.append(this.el("p","empty","Noch keine Termine eingetragen."));
+      else events.forEach(ev=>{const item=this.el("div","item");const info=this.el("div","item-main");info.append(this.el("strong",null,ev.title),this.el("div","small",ev.start.replace("T"," ")));item.append(info);box.append(item);});
+      box.append(this.button(this.childForm==="event"?"Abbrechen":"➕ Termin eintragen",()=>{this.childForm=this.childForm==="event"?null:"event";this.render();}));
+      if(this.childForm==="event"){
+        const form=this.el("form","formgrid");const title=this.input("Was ist geplant?","text","","title");title.querySelector("input").required=true;
+        const start=this.input("Beginn","datetime-local","","start");start.querySelector("input").required=true;
+        const end=this.input("Ende","datetime-local","","end");end.querySelector("input").required=true;
+        const submit=this.el("button","btn","Termin speichern");submit.type="submit";
+        form.append(title,start,end,submit);
+        form.addEventListener("submit",e=>{e.preventDefault();this.childForm=null;this.request("child_event_create",{title:title.querySelector("input").value,start:start.querySelector("input").value,end:end.querySelector("input").value,all_day:false});});box.append(form);
+      }
+      page.append(box);
+    }
+  }
   renderMembers(page) {
     const card=this.el("section","panel");card.append(this.cardTitle("Familienmitglieder"));
     const add=this.button(this.editMember?"Bearbeitung abbrechen":"+ Familienmitglied hinzufügen",()=>{this.editMember=this.editMember?null:{name:"",color:"#3B82F6"};this.render();});card.append(add);
@@ -347,7 +458,6 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(t.priority==="high")tags.append(this.el("span","chip tag-high","Wichtig"));
     t.assignees.forEach(id=>{const member=this.data.members.find(m=>m.id===id);if(member){const chip=this.el("span","chip",member.name);chip.style.borderLeft=`4px solid ${member.color}`;tags.append(chip);}});
     main.append(tags);r.append(main);
-    if(ev.external){r.append(this.el("span","chip","Nur lesen"));return r;}
     const buttons=this.el("div","actions");buttons.append(this.button("✎",()=>{this.tab="tasks";this.editTask={...t,assignees:[...t.assignees]};this.render();},"btn secondary"));
     buttons.append(this.button("×",()=>{if(confirm(`Aufgabe „${t.title}“ wirklich löschen?`))this.request("task_delete",{task_id:t.id});},"btn secondary danger"));r.append(buttons);return r;
   }
