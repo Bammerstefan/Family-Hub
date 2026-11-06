@@ -75,7 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.3",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.4",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -580,13 +580,22 @@ async def ws_child_event_create(hass, connection, msg):
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/version"})
+@websocket_api.async_response
+async def ws_version(hass, connection, msg):
+    """Report installed backend version to help diagnose stale frontend caches."""
+    from homeassistant.loader import async_get_integration
+    integration = await async_get_integration(hass, DOMAIN)
+    connection.send_result(msg["id"], {"backend_version": integration.version})
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_events,

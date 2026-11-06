@@ -1,4 +1,4 @@
-/* BamLabs Family Hub 0.3.3 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.3.4 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -25,6 +25,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.qrFor = null;
     this.childForm = null;
     this.showCalendarSetup = false;
+    this.backendVersion = "";
   }
   connectedCallback() {
     // Refresh visible calendar data regularly while this panel is mounted.
@@ -50,12 +51,29 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       this.data = await this._hass.callWS({type:"bamlabs_family_hub/state"});
       this.loaded = true;
       this.error = "";
+      this.checkVersion();
       if (this.data._role === "admin") {
         this.loadCalendarSources();
         this.refreshExternalEvents();
       }
     } catch(e) { this.error = e.message || String(e); }
     finally { this.busy = false; this.render(); }
+  }
+  async checkVersion() {
+    try {
+      const info = await this._hass.callWS({type:"bamlabs_family_hub/version"});
+      this.backendVersion = info.backend_version || "unbekannt";
+    } catch (e) {
+      this.backendVersion = "nicht abrufbar";
+    }
+    this.render();
+  }
+  reloadHub() {
+    // A cache-busted page navigation refreshes the browser view.
+    // Installing a new integration release is done through Marketplace.
+    const url = new URL(window.location.href);
+    url.searchParams.set("family_hub_refresh", String(Date.now()));
+    window.location.assign(url.toString());
   }
   async request(type, payload={}) {
     if (this.busy) return;
@@ -135,7 +153,18 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const page=this.el("main","page");
     const header=this.el("div","top");
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
-    header.append(left,this.el("span","small","Kostenlose Grundversion · v0.3.3"));page.append(header);
+    const tools=this.el("div","actions");
+    const versionText=this.backendVersion
+      ? `Oberfläche v0.3.4 · Backend v${this.backendVersion}`
+      : "Oberfläche v0.3.4";
+    tools.append(this.el("span","small",versionText));
+    const reload=this.button("🔄 Aktualisieren",()=>this.reloadHub(),"btn secondary");
+    reload.title="Oberfläche neu laden. Neue Versionen über den Marketplace installieren.";
+    tools.append(reload);
+    header.append(left,tools);page.append(header);
+    if(this.backendVersion && this.backendVersion!=="0.3.4" && this.backendVersion!=="nicht abrufbar") {
+      page.append(this.el("div","notice",`Oberfläche und Backend haben verschiedene Versionen (${versionText}). Bitte das Update im Marketplace installieren, Home Assistant neu starten und dann Aktualisieren drücken.`));
+    }
     const nav=this.el("nav","nav");
     const child = this.data._role === "child";
     const tabs = child ? [["today","🏡 Mein Tag"],["tasks","✅ Aufgaben"],["calendar","📅 Termine"]]
