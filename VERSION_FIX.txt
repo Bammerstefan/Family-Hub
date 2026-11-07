@@ -1,1 +1,1 @@
-Family Hub 0.3.6: Kinderansicht verbessert. Installiere aus ZIP, starte Home Assistant neu und nutze den Aktualisieren-Button.
+Family Hub 0.3.7: Kalenderkonfiguration unter Einstellungen; Fortschrittsanzeige pro Familienmitglied und Aufgabenfilter. Vor der Installation Backup erstellen, danach Home Assistant neu starten.

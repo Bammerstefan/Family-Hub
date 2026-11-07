@@ -30,3 +30,10 @@ Getestet: Python-Kompilierung, JavaScript-Syntaxprüfung und ZIP-Struktur. Kein 
 - Größere Touchflächen für Aufgaben und Buttons auf kleinen Displays.
 - Die bisherigen QR-Codes und Home-Assistant-Benutzerrechte bleiben unverändert.
 - Nur lokale Daten; importierte Google-Termine werden weiterhin ausschließlich im Elternkalender angezeigt.
+
+## Version 0.3.7
+- Kalenderauswahl und Personenzuordnung gesammelt unter Einstellungen → Home-Assistant-Kalender einblenden.
+- Kalender zeigt nur noch eine Schaltfläche zu den Kalender-Einstellungen.
+- Elternübersicht: erledigte/offene/überfällige Aufgaben pro Person mit Fortschrittsbalken.
+- Aufgabenansicht: nach Familienmitglied filtern.
+- Aufgaben und Termine bleiben im lokalen HA-Speicher unverändert.

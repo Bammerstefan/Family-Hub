@@ -1,4 +1,4 @@
-/* BamLabs Family Hub 0.3.6 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.3.7 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -25,6 +25,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.qrFor = null;
     this.childForm = null;
     this.showCalendarSetup = false;
+    this.taskFilter = "";
     this.backendVersion = "";
   }
   connectedCallback() {
@@ -170,6 +171,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       *,*:before,*:after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}
       .page{max-width:1120px;margin:0 auto;padding:24px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:25px;font-weight:800;letter-spacing:-.6px}.small{font-size:13px;color:var(--secondary-text-color,#697386)}.nav{display:flex;gap:9px;overflow:auto;margin:23px 0}.tab{border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);padding:11px 16px;border-radius:12px;color:inherit;white-space:nowrap;font-weight:650}.tab.selected{background:#1464db;color:white;border-color:#1464db}
       .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
+      .progress-person{border-top:1px solid var(--divider-color,#dfe5ee);padding:14px 0;display:grid;gap:8px}.progress-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}.progress-track{height:12px;background:var(--secondary-background-color,#eef1f6);border-radius:999px;overflow:hidden}.progress-fill{height:100%;border-radius:999px;transition:width .2s}.progress-person .btn{justify-self:start} 
       .child-welcome{margin-bottom:16px}.child-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}.child-stat{display:grid;gap:4px;align-content:center;border-radius:13px;background:var(--secondary-background-color,#eef1f6);padding:12px;text-align:center}.child-stat-number{font-size:24px;font-weight:800}.child-task{min-height:62px;cursor:pointer}.child-task .check{width:28px;height:28px;flex-shrink:0}.child-action{min-height:48px;margin-top:12px}
       @media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}}`;
     root.append(style);
@@ -178,14 +180,14 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
     const tools=this.el("div","actions");
     const versionText=this.backendVersion
-      ? `Oberfläche v0.3.6 · Backend v${this.backendVersion}`
-      : "Oberfläche v0.3.6";
+      ? `Oberfläche v0.3.7 · Backend v${this.backendVersion}`
+      : "Oberfläche v0.3.7";
     tools.append(this.el("span","small",versionText));
     const reload=this.button("🔄 Aktualisieren",()=>this.reloadHub(),"btn secondary");
     reload.title="Oberfläche neu laden. Neue Versionen über den Marketplace installieren.";
     tools.append(reload);
     header.append(left,tools);page.append(header);
-    if(this.backendVersion && this.backendVersion!=="0.3.6" && this.backendVersion!=="nicht abrufbar") {
+    if(this.backendVersion && this.backendVersion!=="0.3.7" && this.backendVersion!=="nicht abrufbar") {
       page.append(this.el("div","notice",`Oberfläche und Backend haben verschiedene Versionen (${versionText}). Bitte das Update im Marketplace installieren, Home Assistant neu starten und dann Aktualisieren drücken.`));
     }
     const nav=this.el("nav","nav");
@@ -217,6 +219,24 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     [[this.data.members.length,"Familienmitglieder"],[pending.length,"Offene Aufgaben"],[due.length,"Heute fällig / überfällig"],[this.occurrences(localDate,localDate).length,"Termine heute"]].forEach(([v,l])=>{
       const c=this.el("div","panel");c.append(this.el("div","small",l),this.el("div","stat",String(v)));stats.append(c);
     });page.append(stats);
+    const progress=this.el("section","panel");progress.append(this.cardTitle("👨‍👩‍👧 Aufgabenfortschritt der Familie"));
+    progress.append(this.el("p","small","Aktueller Stand aller zugewiesenen Aufgaben. Ein Häkchen kann in der Aufgabenliste auch wieder entfernt werden."));
+    if(!this.data.members.length)progress.append(this.el("div","empty","Lege zuerst Familienmitglieder an."));
+    for(const member of this.data.members){
+      const mine=this.data.tasks.filter(t=>(t.assignees||[]).includes(member.id));
+      const completed=mine.filter(t=>t.done).length;
+      const overdue=mine.filter(t=>!t.done&&t.due&&t.due<localDate).length;
+      const ratio=mine.length?Math.round(completed/mine.length*100):0;
+      const block=this.el("div","progress-person");
+      const title=this.el("div","progress-head");
+      const who=this.el("strong",null,member.name);who.style.borderLeft=`5px solid ${member.color}`;who.style.paddingLeft="9px";
+      title.append(who,this.el("span","small",`${completed} von ${mine.length} erledigt (${ratio} %)`));block.append(title);
+      const track=this.el("div","progress-track");track.setAttribute("role","progressbar");track.setAttribute("aria-valuenow",String(completed));track.setAttribute("aria-valuemin","0");track.setAttribute("aria-valuemax",String(mine.length));track.setAttribute("aria-label",`Erledigte Aufgaben von ${member.name}`);
+      const fill=this.el("div","progress-fill");fill.style.width=`${ratio}%`;fill.style.background=member.color;track.append(fill);block.append(track);
+      const detail=this.el("div","small",`${mine.length-completed} offen${overdue?` · ${overdue} überfällig`:""}`);block.append(detail);
+      block.append(this.button("Aufgaben ansehen",()=>{this.taskFilter=member.id;this.tab="tasks";this.render();},"btn secondary"));progress.append(block);
+    }
+    page.append(progress);
     const card=this.el("section","panel");card.append(this.cardTitle("Heute im Blick"));
     if(!due.length) card.append(this.el("div","empty","Keine fälligen Aufgaben – Zeit für etwas Schönes!"));
     else due.sort((a,b)=>a.due.localeCompare(b.due)).forEach(t=>card.append(this.taskRow(t)));
@@ -291,31 +311,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   }
   renderCalendar(page) {
     const section=this.el("section","panel");section.append(this.cardTitle("Familienkalender"));
-    const extCard=this.el("div","panel");extCard.append(this.el("strong",null,"Home-Assistant-Kalender einblenden"));
-    extCard.append(this.el("p","small","Dauerhaft verbunden: Google- und andere Home-Assistant-Kalender werden automatisch ca. alle 5 Minuten aktualisiert, solange Family Hub geöffnet ist. Neue Termine erscheinen auch beim nächsten Öffnen. Änderungen erfolgen weiterhin im ursprünglichen Kalender."));
-    const syncText = this.externalLastSync
-      ? `Letzte Aktualisierung: ${this.externalLastSync.toLocaleString("de-AT", {dateStyle:"short",timeStyle:"short"})}`
-      : "Noch keine erfolgreiche Kalenderaktualisierung";
-    extCard.append(this.el("p","small",syncText));
-    if(this.externalError) extCard.append(this.el("div","notice",this.externalError));
-    if(this.externalBusy) extCard.append(this.el("div","small","Kalender werden geladen …"));
-    const selections=[];
-    for(const src of this.externalSources){
-      const lab=this.el("label","person-choice");const check=this.el("input");check.type="checkbox";
-      check.value=src.id;check.checked=(this.data.external_calendars||[]).includes(src.id);
-      selections.push(check);lab.append(check,this.el("span",null,src.name));extCard.append(lab);
-    }
-    if((this.data.external_calendars||[]).length) {
-      extCard.append(this.el("h4",null,"Kalender einer Person zuordnen"));
-      extCard.append(this.el("p","small","Die Termine erscheinen in der Familienfarbe dieser Person. Für einen gemeinsamen Kalender die Auswahl leer lassen."));
-      for(const src of this.externalSources.filter(e=>(this.data.external_calendars||[]).includes(e.id)))
-        extCard.append(this.calendarMemberPicker(src));
-    }
-    if(!this.externalSources.length)extCard.append(this.el("p","small","Keine Home-Assistant-Kalender gefunden. Lege zuerst unter Geräte & Dienste einen Kalender an."));
-    const controls=this.el("div","actions");
-    controls.append(this.button("Auswahl speichern",()=>this.selectCalendars(selections.filter(c=>c.checked).map(c=>c.value)),"btn secondary"));
-    controls.append(this.button("Termine aktualisieren",()=>this.refreshExternalEvents(true),"btn secondary"));
-    extCard.append(controls);section.append(extCard);
+    const hint=this.el("div","actions");
+    hint.append(this.el("span","small",`${(this.data.external_calendars||[]).length} Home-Assistant-Kalender eingeblendet`));
+    hint.append(this.button("⚙️ Kalender einstellen",()=>{this.tab="settings";this.showCalendarSetup=true;this.render();this.loadCalendarSources();},"btn secondary"));
+    section.append(hint);
     const bar=this.el("div","calbar"),move=this.el("div","actions");
     move.append(this.button("‹",()=>{this.changeCalendar(-1);},"btn secondary"),this.button("Heute",()=>{this.calendarAnchor=new Date();this.render();},"btn secondary"),this.button("›",()=>{this.changeCalendar(1);},"btn secondary"));bar.append(move);
     const d=this.calendarAnchor;
@@ -391,14 +390,15 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const intro=this.el("section","panel");
     intro.append(this.cardTitle("⚙️ Einstellungen"));
     intro.append(this.el("p",null,"Hier verbindest du Kalender und richtest den Handy-Zugang für Kinder ein."));
-    intro.append(this.el("h3",null,"📅 Kalender verbinden"));
+    intro.append(this.el("h3",null,"📅 Home-Assistant-Kalender einblenden"));
     intro.append(this.el("p","small","Du kannst Kalender anzeigen, die schon mit Home Assistant verbunden sind. Termine werden anschließend automatisch aktualisiert, solange Family Hub geöffnet ist."));
-    intro.append(this.button("📅 Kalender verbinden",()=>{this.showCalendarSetup=!this.showCalendarSetup;this.render();if(this.showCalendarSetup)this.loadCalendarSources();},"btn"));
+    intro.append(this.button(this.showCalendarSetup?"▴ Kalender-Einstellungen schließen":"⚙️ Kalender auswählen und zuordnen",()=>{this.showCalendarSetup=!this.showCalendarSetup;this.render();if(this.showCalendarSetup)this.loadCalendarSources();},"btn"));
     if(this.showCalendarSetup){
       const setup=this.el("div","panel");
       setup.append(this.el("h3",null,"1. Wähle deinen Kalender"));
       setup.append(this.el("p","small","Wenn dein Google-Kalender bereits unter Home Assistant → Geräte & Dienste eingerichtet ist, kannst du ihn gleich auswählen."));
       if(this.externalError)setup.append(this.el("div","notice",this.externalError));
+      if(this.externalBusy)setup.append(this.el("p","small","Kalender werden geladen …"));
       const selection=[];
       for(const src of this.externalSources){
         const line=this.el("label","person-choice");
@@ -605,8 +605,14 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       f.addEventListener("submit",e=>{e.preventDefault();this.request("task_save",{task_id:this.editTask.id||"",title:title.querySelector("input").value,description:ta.value,due:due.querySelector("input").value,priority:select.value,assignees:checks.filter(c=>c.checked).map(c=>c.value)});});
       card.append(f);
     }
-    const pending=this.data.tasks.filter(t=>!t.done).sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
-    const done=this.data.tasks.filter(t=>t.done);
+    const filter=this.el("label","field");filter.append(this.el("span","field-title","Aufgaben anzeigen für"));
+    const picker=this.el("select");const all=this.el("option",null,"Alle Familienmitglieder");all.value="";picker.append(all);
+    for(const member of this.data.members){const option=this.el("option",null,member.name);option.value=member.id;picker.append(option);}
+    picker.value=this.taskFilter||"";
+    picker.addEventListener("change",()=>{this.taskFilter=picker.value;this.render();});filter.append(picker);card.append(filter);
+    const visible=this.data.tasks.filter(t=>!this.taskFilter||(t.assignees||[]).includes(this.taskFilter));
+    const pending=visible.filter(t=>!t.done).sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
+    const done=visible.filter(t=>t.done);
     card.append(this.el("h3",null,`Offen (${pending.length})`));
     if(!pending.length)card.append(this.el("div","empty","Keine offenen Aufgaben."));else pending.forEach(t=>card.append(this.taskRow(t)));
     card.append(this.el("h3",null,`Erledigt (${done.length})`));
