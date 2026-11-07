@@ -1,1 +1,1 @@
-Family Hub 0.3.7: Kalenderkonfiguration unter Einstellungen; Fortschrittsanzeige pro Familienmitglied und Aufgabenfilter. Vor der Installation Backup erstellen, danach Home Assistant neu starten.
+Family Hub 0.3.8: Kalenderkonfiguration unter Einstellungen; Fortschrittsanzeige pro Familienmitglied und Aufgabenfilter. Vor der Installation Backup erstellen, danach Home Assistant neu starten.

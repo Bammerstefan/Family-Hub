@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, datetime, timedelta
+from calendar import monthrange
 from homeassistant.util import dt as dt_util
 from pathlib import Path
 from uuid import uuid4
@@ -35,6 +36,40 @@ def _optional_date(value):
         return date.fromisoformat(value).isoformat()
     except (TypeError, ValueError) as err:
         raise ValueError("Ungültiges Fälligkeitsdatum") from err
+
+
+_TASK_REPEATS = ("none", "daily", "weekly", "biweekly", "monthly", "yearly")
+
+
+def _next_task_due(task, today):
+    """Find next future scheduled occurrence. Do not create backlog after missed weeks."""
+    initial = date.fromisoformat(task["due"])
+    anchor = date.fromisoformat(task.get("repeat_anchor") or task["due"])
+    kind = task.get("repeat", "none")
+    minimum = max(initial, today)
+    if kind in ("daily", "weekly", "biweekly"):
+        step = {"daily": 1, "weekly": 7, "biweekly": 14}[kind]
+        intervals = (minimum - initial).days // step + 1
+        return (initial + timedelta(days=intervals * step)).isoformat()
+    if kind in ("monthly", "yearly"):
+        def month_occurrence(offset):
+            index = anchor.year * 12 + anchor.month - 1 + offset
+            y, m0 = divmod(index, 12)
+            m = m0 + 1
+            return date(y, m, min(anchor.day, monthrange(y, m)[1]))
+        if kind == "monthly":
+            offset = (minimum.year - anchor.year) * 12 + minimum.month - anchor.month
+            offset = max(0, offset)
+            candidate = month_occurrence(offset)
+            if candidate <= minimum:
+                candidate = month_occurrence(offset + 1)
+        else:
+            offset = max(0, minimum.year - anchor.year)
+            candidate = month_occurrence(offset * 12)
+            if candidate <= minimum:
+                candidate = month_occurrence((offset + 1) * 12)
+        return candidate.isoformat()
+    raise ValueError("Ungültige Wiederholung")
 
 
 def _color(value):
@@ -75,7 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.7",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.8",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -198,6 +233,7 @@ async def ws_member_delete(hass, connection, msg):
     vol.Optional("due", default=""): str,
     vol.Required("priority"): vol.In(["normal", "high", "low"]),
     vol.Required("assignees"): [str],
+    vol.Optional("repeat", default="none"): vol.In(_TASK_REPEATS),
 })
 @websocket_api.async_response
 async def ws_task_save(hass, connection, msg):
@@ -209,6 +245,8 @@ async def ws_task_save(hass, connection, msg):
         title = _text(msg["title"], 160)
         description = msg["description"].strip()[:1500]
         due = _optional_date(msg["due"])
+        if msg["repeat"] != "none" and not due:
+            raise ValueError("Wiederkehrende Aufgaben benötigen ein Fälligkeitsdatum")
         assignees = list(dict.fromkeys(msg["assignees"]))
         if len(assignees) > 30:
             raise ValueError("Zu viele Personen")
@@ -225,7 +263,7 @@ async def ws_task_save(hass, connection, msg):
         if msg["task_id"] and task is None:
             connection.send_error(msg["id"], "not_found", "Aufgabe nicht gefunden")
             return
-        fields = {"title": title, "description": description, "due": due, "priority": msg["priority"], "assignees": assignees}
+        fields = {"title": title, "description": description, "due": due, "priority": msg["priority"], "assignees": assignees, "repeat": msg["repeat"], "repeat_anchor": due if msg["repeat"] != "none" else ""}
         if task:
             task.update(fields)
         else:
@@ -249,7 +287,33 @@ async def ws_task_toggle(hass, connection, msg):
         if task is None:
             connection.send_error(msg["id"], "not_found", "Aufgabe nicht gefunden")
             return
-        task["done"] = not task.get("done", False)
+        tasks = hub["state"]["tasks"]
+        if task.get("done"):
+            successor_id = task.get("next_task_id")
+            successor = next((t for t in tasks if t["id"] == successor_id), None) if successor_id else None
+            if successor and successor.get("done"):
+                connection.send_error(msg["id"], "invalid_data", "Eine spätere Wiederholung wurde bereits erledigt. Diese alte Aufgabe kann nicht wieder geöffnet werden.")
+                return
+            if successor:
+                tasks.remove(successor)
+                task["repeat"] = task.pop("completed_repeat", "none")
+                task.pop("next_task_id", None)
+            task["done"] = False
+        else:
+            task["done"] = True
+            kind = task.get("repeat", "none")
+            if kind != "none":
+                next_task = {k: task[k] for k in ("title", "description", "priority", "assignees", "repeat")}
+                next_task["assignees"] = list(next_task["assignees"])
+                next_task["repeat_anchor"] = task.get("repeat_anchor") or task["due"]
+                next_task["due"] = _next_task_due(task, dt_util.now().date())
+                next_task["id"] = uuid4().hex
+                next_task["done"] = False
+                next_task["series_id"] = task.get("series_id") or task["id"]
+                task["next_task_id"] = next_task["id"]
+                task["completed_repeat"] = kind
+                task["repeat"] = "none"
+                tasks.append(next_task)
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], _visible_state(hub, connection))
 

@@ -1,4 +1,4 @@
-/* BamLabs Family Hub 0.3.7 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.3.8 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -220,9 +220,11 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const c=this.el("div","panel");c.append(this.el("div","small",l),this.el("div","stat",String(v)));stats.append(c);
     });page.append(stats);
     const progress=this.el("section","panel");progress.append(this.cardTitle("👨‍👩‍👧 Aufgabenfortschritt der Familie"));
-    progress.append(this.el("p","small","Aktueller Stand aller zugewiesenen Aufgaben. Ein Häkchen kann in der Aufgabenliste auch wieder entfernt werden."));
+    progress.append(this.el("p","small","Hier siehst du nur Personen, die noch offene Aufgaben haben."));
     if(!this.data.members.length)progress.append(this.el("div","empty","Lege zuerst Familienmitglieder an."));
-    for(const member of this.data.members){
+    const activeMembers=this.data.members.filter(m=>pending.some(t=>(t.assignees||[]).includes(m.id)));
+    if(!activeMembers.length && this.data.members.length) progress.append(this.el("div","empty","🎉 Alle zugewiesenen Aufgaben erledigt!"));
+    for(const member of activeMembers){
       const mine=this.data.tasks.filter(t=>(t.assignees||[]).includes(member.id));
       const completed=mine.filter(t=>t.done).length;
       const overdue=mine.filter(t=>!t.done&&t.due&&t.due<localDate).length;
@@ -246,10 +248,6 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(!todayEvents.length) appointments.append(this.el("div","empty","Heute keine Termine."));
     else todayEvents.forEach(o=>appointments.append(this.eventRow(o)));
     appointments.append(this.button("Kalender öffnen",()=>{this.tab="calendar";this.render();},"btn secondary"));page.append(appointments);
-    const family=this.el("section","panel");family.append(this.cardTitle("Unsere Familie"));
-    if(!this.data.members.length) family.append(this.el("p","muted","Lege zuerst eure Familienmitglieder an."));
-    else {const chips=this.el("div","chips");this.data.members.forEach(m=>{const c=this.el("span","chip",m.name);c.style.borderLeft=`5px solid ${m.color}`;chips.append(c);});family.append(chips);}
-    family.append(this.el("p","small","Tipp: Aufgaben können mehreren Familienmitgliedern zugeordnet werden."));page.append(family);
   }
   isoDate(d) {return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
   addDays(date,n) {const d=new Date(date.getFullYear(),date.getMonth(),date.getDate());d.setDate(d.getDate()+n);return d;}
@@ -559,6 +557,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     check.setAttribute("aria-label",`${task.title} ${task.done?"wieder öffnen":"erledigen"}`);
     check.addEventListener("change",()=>this.request("task_toggle",{task_id:task.id}));
     const details=this.el("span","item-main");details.append(this.el("strong","item-title",task.title));
+    if(task.repeat && task.repeat!=="none") details.append(this.el("div","small","🔁 Wiederkehrende Aufgabe"));
     if(task.due){
       const due=this.el("div","small",`Bis ${this.dateLabel(task.due)}`);
       if(!task.done && task.due<today) due.classList.add("tag-high");
@@ -587,7 +586,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   }
   renderTasks(page) {
     const card=this.el("section","panel");card.append(this.cardTitle("Aufgaben & Haushalt"));
-    card.append(this.button(this.editTask?"Bearbeitung abbrechen":"+ Neue Aufgabe",()=>{this.editTask=this.editTask?null:{title:"",description:"",due:"",priority:"normal",assignees:[]};this.render();}));
+    card.append(this.button(this.editTask?"Bearbeitung abbrechen":"+ Neue Aufgabe",()=>{this.editTask=this.editTask?null:{title:"",description:"",due:"",priority:"normal",repeat:"none",assignees:[]};this.render();}));
     if(this.editTask){
       const f=this.el("form","formgrid");const title=this.input("Aufgabe","text",this.editTask.title,"title");title.querySelector("input").required=true;
       const due=this.input("Fällig am (optional)","date",this.editTask.due,"due");
@@ -595,14 +594,18 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const ta=this.el("textarea");ta.value=this.editTask.description||"";ta.maxLength=1500;desc.append(ta);
       const priority=this.el("label","field");priority.append(this.el("span","field-title","Priorität"));
       const select=this.el("select");[["low","Niedrig"],["normal","Normal"],["high","Hoch"]].forEach(([k,v])=>{const o=this.el("option",null,v);o.value=k;select.append(o);});select.value=this.editTask.priority;priority.append(select);
+      const recurring=this.el("label","field");recurring.append(this.el("span","field-title","Wiederholung"));
+      const repeat=this.el("select");[["none","Einmalig"],["daily","Jeden Tag"],["weekly","Jede Woche"],["biweekly","Alle 2 Wochen"],["monthly","Jeden Monat"],["yearly","Jedes Jahr"]].forEach(([id,label])=>{const opt=this.el("option",null,label);opt.value=id;repeat.append(opt);});
+      repeat.value=this.editTask.repeat||"none";recurring.append(repeat);
+      recurring.append(this.el("span","small","Bei Wiederholung bitte den ersten Fälligkeitstag wählen (z. B. Samstag). Nach dem Abhaken entsteht automatisch der nächste Termin."));
       const assigned=this.el("fieldset","field full");assigned.style.border="0";assigned.style.padding="0";
       assigned.append(this.el("legend","field-title","Zuständig (mehrere möglich)"));
       const checks=[];
       this.data.members.forEach(m=>{const label=this.el("label","person-choice");const ch=this.el("input");ch.type="checkbox";ch.value=m.id;ch.checked=this.editTask.assignees.includes(m.id);checks.push(ch);label.append(ch,this.el("span",null,m.name));assigned.append(label);});
       if(!this.data.members.length)assigned.append(this.el("span","small","Noch keine Personen angelegt – Aufgabe kann auch unzugeordnet bleiben."));
       const bottom=this.el("div","full");const save=this.el("button","btn","Aufgabe speichern");save.type="submit";bottom.append(save);
-      f.append(title,due,priority,desc,assigned,bottom);
-      f.addEventListener("submit",e=>{e.preventDefault();this.request("task_save",{task_id:this.editTask.id||"",title:title.querySelector("input").value,description:ta.value,due:due.querySelector("input").value,priority:select.value,assignees:checks.filter(c=>c.checked).map(c=>c.value)});});
+      f.append(title,due,priority,recurring,desc,assigned,bottom);
+      f.addEventListener("submit",e=>{e.preventDefault();this.request("task_save",{task_id:this.editTask.id||"",title:title.querySelector("input").value,description:ta.value,due:due.querySelector("input").value,priority:select.value,repeat:repeat.value,assignees:checks.filter(c=>c.checked).map(c=>c.value)});});
       card.append(f);
     }
     const filter=this.el("label","field");filter.append(this.el("span","field-title","Aufgaben anzeigen für"));
@@ -624,6 +627,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(t.description)main.append(this.el("div","desc",t.description));
     const tags=this.el("div","chips");if(t.due)tags.append(this.el("span","chip",`📅 ${this.dateLabel(t.due)}`));
     if(t.priority==="high")tags.append(this.el("span","chip tag-high","Wichtig"));
+    const repeatNames={daily:"Täglich",weekly:"Wöchentlich",biweekly:"Alle 2 Wochen",monthly:"Monatlich",yearly:"Jährlich"};
+    if(repeatNames[t.repeat])tags.append(this.el("span","chip",`🔁 ${repeatNames[t.repeat]}`));
+    if(t.completed_repeat)tags.append(this.el("span","chip","🔁 Wiederholung erstellt"));
     t.assignees.forEach(id=>{const member=this.data.members.find(m=>m.id===id);if(member){const chip=this.el("span","chip",member.name);chip.style.borderLeft=`4px solid ${member.color}`;tags.append(chip);}});
     main.append(tags);r.append(main);
     const buttons=this.el("div","actions");buttons.append(this.button("✎",()=>{this.tab="tasks";this.editTask={...t,assignees:[...t.assignees]};this.render();},"btn secondary"));
