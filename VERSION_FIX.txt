@@ -1,1 +1,1 @@
-Family Hub v0.3.5 – Kalender-Personenzuordnung und Farben; Home Assistant nach Installation neu starten.
+Family Hub 0.3.6: Kinderansicht verbessert. Installiere aus ZIP, starte Home Assistant neu und nutze den Aktualisieren-Button.

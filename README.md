@@ -21,3 +21,12 @@ Getestet: Python-Kompilierung, JavaScript-Syntaxprüfung und ZIP-Struktur. Kein 
 - Kalender einer Person zuweisen: Anzeigen der importierten Termine in deren Familienfarbe.
 - Home-Assistant-Kalender werden weiterhin nur lesend eingebunden; Google Calendar muss zuerst über Home Assistant eingerichtet werden.
 - Daten aus 0.3.4 bleiben im vorhandenen Home-Assistant-Speicher.
+
+## v0.3.6 – Kinderansicht am Handy
+- Persönliche Übersicht mit offenen, erledigten und heute fälligen Aufgaben.
+- Überfällige Aufgaben deutlich markieren.
+- Erledigte Aufgaben im Aufgaben-Tab anzeigen und bei Bedarf wieder öffnen.
+- Auf „Mein Tag“ nur die nächsten fünf anstehenden Termine darstellen.
+- Größere Touchflächen für Aufgaben und Buttons auf kleinen Displays.
+- Die bisherigen QR-Codes und Home-Assistant-Benutzerrechte bleiben unverändert.
+- Nur lokale Daten; importierte Google-Termine werden weiterhin ausschließlich im Elternkalender angezeigt.

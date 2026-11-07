@@ -1,4 +1,4 @@
-/* BamLabs Family Hub 0.3.5 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.3.6 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -170,21 +170,22 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       *,*:before,*:after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}
       .page{max-width:1120px;margin:0 auto;padding:24px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:25px;font-weight:800;letter-spacing:-.6px}.small{font-size:13px;color:var(--secondary-text-color,#697386)}.nav{display:flex;gap:9px;overflow:auto;margin:23px 0}.tab{border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);padding:11px 16px;border-radius:12px;color:inherit;white-space:nowrap;font-weight:650}.tab.selected{background:#1464db;color:white;border-color:#1464db}
       .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
-      @media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}}`;
+      .child-welcome{margin-bottom:16px}.child-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}.child-stat{display:grid;gap:4px;align-content:center;border-radius:13px;background:var(--secondary-background-color,#eef1f6);padding:12px;text-align:center}.child-stat-number{font-size:24px;font-weight:800}.child-task{min-height:62px;cursor:pointer}.child-task .check{width:28px;height:28px;flex-shrink:0}.child-action{min-height:48px;margin-top:12px}
+      @media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}}`;
     root.append(style);
     const page=this.el("main","page");
     const header=this.el("div","top");
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
     const tools=this.el("div","actions");
     const versionText=this.backendVersion
-      ? `Oberfläche v0.3.5 · Backend v${this.backendVersion}`
-      : "Oberfläche v0.3.5";
+      ? `Oberfläche v0.3.6 · Backend v${this.backendVersion}`
+      : "Oberfläche v0.3.6";
     tools.append(this.el("span","small",versionText));
     const reload=this.button("🔄 Aktualisieren",()=>this.reloadHub(),"btn secondary");
     reload.title="Oberfläche neu laden. Neue Versionen über den Marketplace installieren.";
     tools.append(reload);
     header.append(left,tools);page.append(header);
-    if(this.backendVersion && this.backendVersion!=="0.3.5" && this.backendVersion!=="nicht abrufbar") {
+    if(this.backendVersion && this.backendVersion!=="0.3.6" && this.backendVersion!=="nicht abrufbar") {
       page.append(this.el("div","notice",`Oberfläche und Backend haben verschiedene Versionen (${versionText}). Bitte das Update im Marketplace installieren, Home Assistant neu starten und dann Aktualisieren drücken.`));
     }
     const nav=this.el("nav","nav");
@@ -456,47 +457,115 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     page.append(items);
   }
   renderChild(page) {
-    const me=this.data.members[0];
-    const card=this.el("section","panel");
-    card.append(this.cardTitle(`👋 Hallo ${me?.name||"!"}!`));
-    card.append(this.el("p","small","Hier siehst du nur deine Aufgaben und Termine."));
-    page.append(card);
-    if(this.tab==="today" || this.tab==="tasks"){
-      const tasks=this.el("section","panel");tasks.append(this.cardTitle("✅ Meine Aufgaben"));
-      const open=this.data.tasks.filter(t=>!t.done);
-      if(!open.length)tasks.append(this.el("p","empty","Alles erledigt – super! 🎉"));
-      else open.forEach(t=>{
-        const item=this.el("div","item");
-        const check=this.el("input","check");check.type="checkbox";check.checked=!!t.done;
-        check.addEventListener("change",()=>this.request("task_toggle",{task_id:t.id}));
-        const details=this.el("div","item-main");details.append(this.el("strong",null,t.title));
-        if(t.due)details.append(this.el("div","small",`Bis ${this.dateLabel(t.due)}`));
-        item.append(check,details);tasks.append(item);
-      });
-      const add=this.button(this.childForm==="task"?"Abbrechen":"➕ Aufgabe eintragen",()=>{this.childForm=this.childForm==="task"?null:"task";this.render();});tasks.append(add);
-      if(this.childForm==="task"){
-        const form=this.el("form","formgrid");const title=this.input("Was möchtest du erledigen?","text","","title");title.querySelector("input").required=true;
-        const due=this.input("Bis wann? (freiwillig)","date","","due");const button=this.el("button","btn","Speichern");button.type="submit";
-        form.append(title,due,button);form.addEventListener("submit",e=>{e.preventDefault();this.childForm=null;this.request("child_task_create",{title:title.querySelector("input").value,due:due.querySelector("input").value});});tasks.append(form);
+    const me = this.data.members[0];
+    const tasks = this.data.tasks || [];
+    const open = tasks.filter(t => !t.done).sort((a,b) => (a.due || "9999").localeCompare(b.due || "9999"));
+    const finished = tasks.filter(t => t.done);
+    const now = new Date();
+    const localDay = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    const today = localDay(now);
+    const dueToday = open.filter(t => t.due === today).length;
+    const overdue = open.filter(t => t.due && t.due < today).length;
+    const welcome = this.el("section", "panel child-welcome");
+    welcome.style.borderLeft = `6px solid ${me?.color || "#1464db"}`;
+    welcome.append(this.cardTitle(`👋 Hallo ${me?.name || "du"}!`));
+    welcome.append(this.el("p", "small", "Dein eigener Bereich: Hier kannst du Aufgaben abhaken und Termine eintragen."));
+    const stats = this.el("div", "child-stats");
+    [["✅",`${open.length}`,"Noch offen"],["⭐",`${finished.length}`,"Erledigt"],["📅",`${dueToday}`,"Heute fällig"]].forEach(([icon,value,label]) => {
+      const stat = this.el("div", "child-stat");
+      stat.append(this.el("span", "child-stat-number", `${icon} ${value}`), this.el("span", "small", label));
+      stats.append(stat);
+    });
+    welcome.append(stats);
+    if(overdue) welcome.append(this.el("p", "notice", `⏰ ${overdue} ${overdue===1?"Aufgabe ist":"Aufgaben sind"} überfällig.`));
+    page.append(welcome);
+    if(this.tab === "today" || this.tab === "tasks") {
+      const section = this.el("section", "panel");
+      section.append(this.cardTitle("✅ Meine offenen Aufgaben"));
+      if(!open.length) section.append(this.el("p", "empty", "Alles erledigt – super! 🎉"));
+      for(const t of open) section.append(this.childTaskRow(t, today));
+      section.append(this.button(this.childForm === "task" ? "Abbrechen" : "➕ Neue Aufgabe", () => {
+        this.childForm = this.childForm === "task" ? null : "task"; this.render();
+      }, "btn child-action"));
+      if(this.childForm === "task") {
+        const form=this.el("form","formgrid");
+        const title=this.input("Was möchtest du erledigen?","text","","title"); title.querySelector("input").required=true;
+        const due=this.input("Bis wann? (freiwillig)","date","","due");
+        const submit=this.el("button","btn","Aufgabe speichern"); submit.type="submit";
+        form.append(title,due,submit);
+        form.addEventListener("submit",e=>{
+          e.preventDefault();
+          this.request("child_task_create",{title:title.querySelector("input").value,due:due.querySelector("input").value}).then(()=>{
+            if(!this.error) this.childForm=null;
+            this.render();
+          });
+        });
+        section.append(form);
       }
-      page.append(tasks);
+      page.append(section);
+      if(this.tab === "tasks" && finished.length) {
+        const done = this.el("section", "panel");
+        done.append(this.cardTitle(`🌟 Schon geschafft (${finished.length})`));
+        done.append(this.el("p","small","Häkchen aus Versehen gesetzt? Tippe erneut darauf."));
+        for(const t of finished) done.append(this.childTaskRow(t, today));
+        page.append(done);
+      }
+      if(this.tab === "today" && finished.length) {
+        page.append(this.button(`🌟 ${finished.length} erledigte Aufgaben ansehen`,()=>{this.tab="tasks";this.render();},"btn secondary child-action"));
+      }
     }
-    if(this.tab==="today" || this.tab==="calendar"){
-      const box=this.el("section","panel");box.append(this.cardTitle("📅 Meine Termine"));
-      const events=[...(this.data.events||[])].sort((a,b)=>a.start.localeCompare(b.start));
-      if(!events.length)box.append(this.el("p","empty","Noch keine Termine eingetragen."));
-      else events.forEach(ev=>{const item=this.el("div","item");const info=this.el("div","item-main");info.append(this.el("strong",null,ev.title),this.el("div","small",ev.start.replace("T"," ")));item.append(info);box.append(item);});
-      box.append(this.button(this.childForm==="event"?"Abbrechen":"➕ Termin eintragen",()=>{this.childForm=this.childForm==="event"?null:"event";this.render();}));
-      if(this.childForm==="event"){
-        const form=this.el("form","formgrid");const title=this.input("Was ist geplant?","text","","title");title.querySelector("input").required=true;
+    if(this.tab === "today" || this.tab === "calendar") {
+      const section=this.el("section","panel");
+      section.append(this.cardTitle("📅 Meine Termine"));
+      const events=[...(this.data.events || [])].sort((a,b)=>a.start.localeCompare(b.start));
+      const upcoming = this.tab === "today" ? events.filter(e=>(e.end || e.start).slice(0,10)>=today).slice(0,5) : events;
+      if(!upcoming.length) section.append(this.el("p","empty","Keine anstehenden Termine."));
+      else upcoming.forEach(ev=>{
+        const item=this.el("div","item");
+        const info=this.el("div","item-main");
+        const dateStr=ev.start.slice(0,10);
+        const hour=ev.all_day || !ev.start.includes("T") ? "Ganztägig" : ev.start.slice(11,16)+" Uhr";
+        info.append(this.el("strong",null,ev.title),this.el("div","small",`${this.dateLabel(dateStr)} · ${hour}`));
+        item.append(info);section.append(item);
+      });
+      section.append(this.button(this.childForm==="event"?"Abbrechen":"➕ Termin eintragen",()=>{
+        this.childForm=this.childForm==="event"?null:"event";this.render();
+      },"btn child-action"));
+      if(this.childForm==="event") {
+        const form=this.el("form","formgrid");
+        const title=this.input("Was ist geplant?","text","","title"); title.querySelector("input").required=true;
         const start=this.input("Beginn","datetime-local","","start");start.querySelector("input").required=true;
         const end=this.input("Ende","datetime-local","","end");end.querySelector("input").required=true;
         const submit=this.el("button","btn","Termin speichern");submit.type="submit";
         form.append(title,start,end,submit);
-        form.addEventListener("submit",e=>{e.preventDefault();this.childForm=null;this.request("child_event_create",{title:title.querySelector("input").value,start:start.querySelector("input").value,end:end.querySelector("input").value,all_day:false});});box.append(form);
+        form.addEventListener("submit",e=>{
+          e.preventDefault();
+          const begin=start.querySelector("input").value;
+          const finish=end.querySelector("input").value;
+          if(finish < begin) {this.error="Das Ende muss nach dem Beginn liegen.";this.render();return;}
+          this.request("child_event_create",{title:title.querySelector("input").value,start:begin,end:finish,all_day:false}).then(()=>{
+            if(!this.error) this.childForm=null;
+            this.render();
+          });
+        });
+        section.append(form);
       }
-      page.append(box);
+      page.append(section);
     }
+  }
+  childTaskRow(task, today) {
+    const item=this.el("label",`item child-task ${task.done?"done":""}`);
+    const check=this.el("input","check");check.type="checkbox";check.checked=!!task.done;check.disabled=this.busy;
+    check.setAttribute("aria-label",`${task.title} ${task.done?"wieder öffnen":"erledigen"}`);
+    check.addEventListener("change",()=>this.request("task_toggle",{task_id:task.id}));
+    const details=this.el("span","item-main");details.append(this.el("strong","item-title",task.title));
+    if(task.due){
+      const due=this.el("div","small",`Bis ${this.dateLabel(task.due)}`);
+      if(!task.done && task.due<today) due.classList.add("tag-high");
+      details.append(due);
+    }
+    item.append(check,details);
+    return item;
   }
   renderMembers(page) {
     const card=this.el("section","panel");card.append(this.cardTitle("Familienmitglieder"));
