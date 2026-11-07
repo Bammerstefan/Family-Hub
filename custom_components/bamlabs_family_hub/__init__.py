@@ -54,7 +54,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "child_users": data.get("child_users", {})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {})}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock})
@@ -75,7 +75,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.4",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.5",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -117,7 +117,7 @@ def _visible_state(hub, connection):
             "members": [m for m in state["members"] if m["id"] == member_id],
             "tasks": [t for t in state["tasks"] if member_id in t.get("assignees", [])],
             "events": [e for e in state["events"] if member_id in e.get("members", [])],
-            "external_calendars": []}
+            "external_calendars": [], "calendar_members": {}}
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})
@@ -185,6 +185,7 @@ async def ws_member_delete(hass, connection, msg):
             task["assignees"] = [i for i in task.get("assignees", []) if i != msg["member_id"]]
         for event in hub["state"]["events"]:
             event["members"] = [i for i in event.get("members", []) if i != msg["member_id"]]
+        hub["state"]["calendar_members"] = {k: v for k, v in hub["state"].get("calendar_members", {}).items() if v != msg["member_id"]}
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
@@ -387,6 +388,36 @@ async def ws_calendar_select(hass, connection, msg):
         return
     async with hub["lock"]:
         hub["state"]["external_calendars"] = ids
+        hub["state"]["calendar_members"] = {k: v for k, v in hub["state"].get("calendar_members", {}).items() if k in ids}
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], hub["state"])
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/calendar_member_assign",
+    vol.Required("entity_id"): str,
+    vol.Required("member_id"): str,
+})
+@websocket_api.async_response
+async def ws_calendar_member_assign(hass, connection, msg):
+    """Associate an external calendar with a family member (display only)."""
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    calendar_id, member_id = msg["entity_id"], msg["member_id"]
+    if calendar_id not in hub["state"].get("external_calendars", []):
+        connection.send_error(msg["id"], "invalid_calendar", "Kalender ist nicht ausgewählt")
+        return
+    if member_id and member_id not in {m["id"] for m in hub["state"]["members"]}:
+        connection.send_error(msg["id"], "invalid_member", "Familienmitglied nicht gefunden")
+        return
+    async with hub["lock"]:
+        mappings = hub["state"].setdefault("calendar_members", {})
+        if member_id:
+            mappings[calendar_id] = member_id
+        else:
+            mappings.pop(calendar_id, None)
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
@@ -598,7 +629,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_version, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_event_save, ws_event_delete,
-        ws_calendar_sources, ws_calendar_select, ws_calendar_events,
+        ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
         ws_child_accounts, ws_child_assign, ws_child_qr,
         ws_child_task_create, ws_child_event_create,
     ):

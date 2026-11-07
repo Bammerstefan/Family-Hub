@@ -1,9 +1,9 @@
-/* BamLabs Family Hub 0.3.4 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub 0.3.5 — no external libraries, local Home Assistant storage. */
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {members: [], tasks: [], events: [], external_calendars: []};
+    this.data = {members: [], tasks: [], events: [], external_calendars: [], calendar_members: {}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -101,6 +101,28 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     } catch(e) { this.externalError = e.message || String(e); }
     finally { this.externalBusy = false; this.render(); this.refreshExternalEvents(); }
   }
+  async assignCalendarMember(entityId, memberId) {
+    if (!this._hass || this.externalBusy) return;
+    this.externalBusy = true;
+    try {
+      this.data = await this._hass.callWS({type:"bamlabs_family_hub/calendar_member_assign", entity_id:entityId, member_id:memberId});
+      this.externalError = "";
+    } catch(e) {this.externalError = e.message || String(e);}
+    finally {this.externalBusy = false; this.render();}
+  }
+  calendarMemberPicker(src) {
+    const wrap = this.el("label","field");
+    wrap.append(this.el("span","field-title",`Person für „${src.name}“`));
+    const dropdown = this.el("select");
+    const blank = this.el("option",null,"Gemeinsamer Kalender (grün)"); blank.value = ""; dropdown.append(blank);
+    for(const member of this.data.members) {
+      const opt = this.el("option",null,member.name); opt.value = member.id; dropdown.append(opt);
+    }
+    dropdown.value = (this.data.calendar_members || {})[src.id] || "";
+    dropdown.addEventListener("change",()=>this.assignCalendarMember(src.id,dropdown.value));
+    wrap.append(dropdown);
+    return wrap;
+  }
   async refreshExternalEvents(force=false) {
     if (!this._hass || !this.loaded || this.externalBusy || this.data._role === "child") return;
     // Avoid repeated network requests when the user quickly changes views.
@@ -155,14 +177,14 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
     const tools=this.el("div","actions");
     const versionText=this.backendVersion
-      ? `Oberfläche v0.3.4 · Backend v${this.backendVersion}`
-      : "Oberfläche v0.3.4";
+      ? `Oberfläche v0.3.5 · Backend v${this.backendVersion}`
+      : "Oberfläche v0.3.5";
     tools.append(this.el("span","small",versionText));
     const reload=this.button("🔄 Aktualisieren",()=>this.reloadHub(),"btn secondary");
     reload.title="Oberfläche neu laden. Neue Versionen über den Marketplace installieren.";
     tools.append(reload);
     header.append(left,tools);page.append(header);
-    if(this.backendVersion && this.backendVersion!=="0.3.4" && this.backendVersion!=="nicht abrufbar") {
+    if(this.backendVersion && this.backendVersion!=="0.3.5" && this.backendVersion!=="nicht abrufbar") {
       page.append(this.el("div","notice",`Oberfläche und Backend haben verschiedene Versionen (${versionText}). Bitte das Update im Marketplace installieren, Home Assistant neu starten und dann Aktualisieren drücken.`));
     }
     const nav=this.el("nav","nav");
@@ -248,17 +270,18 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       let last=ext.end.slice(0,10);
       if(ext.all_day && last>start) last=this.isoDate(this.addDays(new Date(`${last}T00:00:00`),-1));
       if(last<from || start>to)continue;
-      const ev={id:"external",title:ext.title,description:ext.description||"",members:[],
+      const assigned=(this.data.calendar_members||{})[ext.calendar];
+      const ev={id:"external",title:ext.title,description:ext.description||"",members:assigned?[assigned]:[],
         start:ext.start,end:ext.end,all_day:ext.all_day,external:true,source:ext.calendar};
       out.push({event:ev,start,end:last,time:ext.all_day?"":ext.start.slice(11,16)});
     }
     return out.sort((a,b)=>(a.start+a.time).localeCompare(b.start+b.time));
   }
-  eventColor(ev) {return ev.external?"#16a085":(this.data.members.find(m=>(ev.members||[]).includes(m.id))?.color||"#1464db");}
+  eventColor(ev) {return (this.data.members.find(m=>(ev.members||[]).includes(m.id))?.color||(ev.external?"#16a085":"#1464db"));}
   eventRow(o) {
     const ev=o.event;const r=this.el("div","item");const dot=this.el("span","dot");dot.style.background=this.eventColor(ev);r.append(dot);
     const body=this.el("div","item-main");body.append(this.el("div","item-title",ev.title));
-    const meta=[`${this.dateLabel(o.start)}${o.end!==o.start?" – "+this.dateLabel(o.end):""}`,ev.all_day?"Ganztägig":ev.start.slice(11,16)+" – "+ev.end.slice(11,16),...(ev.external?[`Home Assistant: ${ev.source}`]:ev.members.map(id=>this.memberName(id)))];
+    const meta=[`${this.dateLabel(o.start)}${o.end!==o.start?" – "+this.dateLabel(o.end):""}`,ev.all_day?"Ganztägig":ev.start.slice(11,16)+" – "+ev.end.slice(11,16),...(ev.external?[`Home Assistant: ${ev.source}`,...ev.members.map(id=>this.memberName(id))]:ev.members.map(id=>this.memberName(id)))];
     body.append(this.el("div","small",meta.join(" · ")));
     if(ev.description)body.append(this.el("div","desc",ev.description));r.append(body);
     if(ev.external){r.append(this.el("span","chip","Nur lesen"));return r;}
@@ -280,6 +303,12 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const lab=this.el("label","person-choice");const check=this.el("input");check.type="checkbox";
       check.value=src.id;check.checked=(this.data.external_calendars||[]).includes(src.id);
       selections.push(check);lab.append(check,this.el("span",null,src.name));extCard.append(lab);
+    }
+    if((this.data.external_calendars||[]).length) {
+      extCard.append(this.el("h4",null,"Kalender einer Person zuordnen"));
+      extCard.append(this.el("p","small","Die Termine erscheinen in der Familienfarbe dieser Person. Für einen gemeinsamen Kalender die Auswahl leer lassen."));
+      for(const src of this.externalSources.filter(e=>(this.data.external_calendars||[]).includes(e.id)))
+        extCard.append(this.calendarMemberPicker(src));
     }
     if(!this.externalSources.length)extCard.append(this.el("p","small","Keine Home-Assistant-Kalender gefunden. Lege zuerst unter Geräte & Dienste einen Kalender an."));
     const controls=this.el("div","actions");
@@ -380,10 +409,16 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       actions.append(this.button("🔄 Kalender suchen",()=>this.loadCalendarSources(),"btn secondary"));
       actions.append(this.button("✓ Auswahl speichern",async()=>{await this.selectCalendars(selection.filter(c=>c.checked).map(c=>c.value));},"btn"));
       setup.append(actions);
-      setup.append(this.el("h3",null,"2. Google Kalender noch nicht verbunden?"));
+      if((this.data.external_calendars||[]).length){
+        setup.append(this.el("h3",null,"2. Kalender zuordnen"));
+        setup.append(this.el("p","small","Wähle für jeden gespeicherten Kalender ein Familienmitglied, damit seine Termine in dessen Farbe erscheinen."));
+        for(const src of this.externalSources.filter(e=>(this.data.external_calendars||[]).includes(e.id)))
+          setup.append(this.calendarMemberPicker(src));
+      }
+      setup.append(this.el("h3",null,"3. Google Kalender noch nicht verbunden?"));
       setup.append(this.el("p","small","Die Google-Verbindung wird von Home Assistant eingerichtet. Öffne Einstellungen → Geräte & Dienste → Integration hinzufügen → Google Calendar. Folge den dortigen Schritten. Anschließend kommst du zurück und klickst auf „Kalender suchen“."));
       setup.append(this.el("p","small","Hinweis: Eine direkte Anmeldung mit Google ist in Family Hub noch nicht verfügbar. Dafür ist eine eigene sichere Google-Anmeldeintegration nötig."));
-      setup.append(this.el("h3",null,"3. Automatische Aktualisierung"));
+      setup.append(this.el("h3",null,"4. Automatische Aktualisierung"));
       setup.append(this.el("p","small",this.externalLastSync?`Zuletzt geladen: ${this.externalLastSync.toLocaleString("de-AT",{dateStyle:"short",timeStyle:"short"})}`:"Noch keine erfolgreiche Aktualisierung."));
       setup.append(this.el("p","small","Verbundene Kalender werden bei geöffnetem Family Hub ungefähr alle fünf Minuten aktualisiert. Termine werden nur angezeigt, nicht in Google verändert."));
       setup.append(this.button("🔄 Termine jetzt laden",()=>this.refreshExternalEvents(true),"btn secondary"));

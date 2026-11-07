@@ -16,3 +16,8 @@
 4. Family Hub öffnen, Versionsangaben oben rechts vergleichen und ggf. 🔄 Aktualisieren anklicken.
 
 Getestet: Python-Kompilierung, JavaScript-Syntaxprüfung und ZIP-Struktur. Kein Live-Test in Home Assistant.
+
+## v0.3.5
+- Kalender einer Person zuweisen: Anzeigen der importierten Termine in deren Familienfarbe.
+- Home-Assistant-Kalender werden weiterhin nur lesend eingebunden; Google Calendar muss zuerst über Home Assistant eingerichtet werden.
+- Daten aus 0.3.4 bleiben im vorhandenen Home-Assistant-Speicher.
