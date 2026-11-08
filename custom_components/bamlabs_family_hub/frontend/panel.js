@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.11";
+const FAMILY_HUB_UI_VERSION = "0.3.12";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -499,6 +499,22 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       setup.append(this.button("🔄 Termine jetzt laden",()=>this.refreshExternalEvents(true),"btn secondary"));
       intro.append(setup);
     }
+    const remind=this.el("section","panel");
+    remind.append(this.el("h3",null,"🔔 Aufgabenerinnerungen"));
+    remind.append(this.el("p","small","Family Hub kann täglich eine Erinnerung für heute fällige und überfällige Aufgaben in Home Assistant anzeigen – auch wenn der Family Hub geschlossen ist. Es werden keine Handy-Push-Nachrichten verschickt."));
+    const settings=this.data.reminder_settings||{enabled:false,hour:8,include_overdue:true};
+    const enabled=this.el("input"); enabled.type="checkbox";enabled.checked=!!settings.enabled;
+    const enabledRow=this.el("label","person-choice");enabledRow.append(enabled,this.el("span",null,"Tägliche Erinnerungen aktivieren"));remind.append(enabledRow);
+    const timeLabel=this.el("label","field");timeLabel.append(this.el("span","field-title","Uhrzeit"));
+    const hour=this.el("select");
+    for(const h of [8,12,18]){const opt=this.el("option");opt.value=String(h);opt.textContent=`${String(h).padStart(2,"0")}:00 Uhr`;hour.append(opt);}
+    hour.value=String(settings.hour??8);timeLabel.append(hour);remind.append(timeLabel);
+    const overdue=this.el("input");overdue.type="checkbox";overdue.checked=settings.include_overdue!==false;
+    const overdueRow=this.el("label","person-choice");overdueRow.append(overdue,this.el("span",null,"Überfällige Aufgaben einbeziehen"));remind.append(overdueRow);
+    const buttons=this.el("div","actions");
+    buttons.append(this.button("✓ Erinnerungseinstellungen speichern",()=>this.request("reminder_settings_save",{enabled:enabled.checked,hour:Number(hour.value),include_overdue:overdue.checked}),"btn"));
+    buttons.append(this.button("🔔 Test-Erinnerung",async()=>{try{const result=await this._hass.callWS({type:"bamlabs_family_hub/reminder_test"});this.error=result.sent?`Test-Erinnerung für ${result.count} offene Aufgaben im Home-Assistant-Benachrichtigungsbereich erstellt.`:"Keine heute fälligen oder überfälligen offenen Aufgaben zum Erinnern gefunden.";}catch(e){this.error=e.message||String(e);}this.render();},"btn secondary"));
+    remind.append(buttons);intro.append(remind);
     intro.append(this.el("h3",null,"📱 Kinder & Handy-Zugang"));
     intro.append(this.el("p","small","Jedes Kind bekommt einen persönlichen QR-Code. Der Code öffnet Family Hub auf dem Handy – ohne Passwort im QR-Code. Zur Anmeldung benötigt das Kind einmalig ein eigenes Home-Assistant-Konto ohne Administratorrechte."));
     intro.append(this.el("p","small","1. Unter Einstellungen → Personen → Benutzer ein eigenes normales Benutzerkonto für jedes Kind anlegen. 2. Hier das Konto mit dem Kind verbinden. 3. QR-Code mit dem Handy scannen und beim ersten Aufruf anmelden. Danach sieht das Kind nur seine zugewiesenen Aufgaben und Termine."));

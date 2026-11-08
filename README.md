@@ -41,3 +41,9 @@ Getestet: Python-Kompilierung, JavaScript-Syntaxprüfung und ZIP-Struktur. Kein 
 
 ## v0.3.11 – Wochenplan
 Der Eltern-Menüpunkt „Wochenplan“ zeigt sieben Tage mit Aufgaben und Terminen. Aufgaben ohne Fälligkeitsdatum bleiben in der Aufgabenliste.
+
+
+## Neu in v0.3.12: Erinnerungen
+Unter Einstellungen → Aufgabenerinnerungen aktivieren. Täglich zur gewählten Uhrzeit
+erscheint eine Home-Assistant-Benachrichtigung mit heute fälligen und optional überfälligen Aufgaben.
+Mit „Test-Erinnerung“ lässt sich die Funktion manuell prüfen. Kein Handy-Push.

@@ -14,6 +14,8 @@ from homeassistant.components import panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers.event import async_track_time_change
+from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
 
 from .const import DOMAIN, PANEL_URL, STORAGE_KEY, STORAGE_VERSION, TITLE
@@ -89,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", "")}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock})
@@ -98,6 +100,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # relying exclusively on async_setup. This also fixes updates where the
     # frontend loads the new calendar form but event_save is unknown.
     _register_commands_once(hass)
+
+    # Scheduled reminder works when the Family Hub browser is closed.
+    if not hub_data.get("reminder_unsubscribe"):
+        async def _reminder_tick(now):
+            await _send_task_reminder(hass, force=False)
+        def _schedule_tick(now):
+            hass.async_create_task(_reminder_tick(now))
+        hub_data["reminder_unsubscribe"] = async_track_time_change(
+            hass, _schedule_tick, hour=[8, 12, 18], minute=0, second=0
+        )
 
     if not hub_data.get("panel_registered"):
         path = Path(__file__).parent / "frontend"
@@ -110,7 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.11",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.12",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -127,6 +139,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hub.pop("state", None)
         hub.pop("store", None)
         hub.pop("lock", None)
+        unsubscribe = hub.pop("reminder_unsubscribe", None)
+        if unsubscribe:
+            unsubscribe()
         hub["panel_registered"] = False
     return True
 
@@ -765,6 +780,69 @@ async def ws_child_event_create(hass, connection, msg):
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
+async def _send_task_reminder(hass, force=False):
+    """Create one HA notification per configured day; no child data exposed via WS."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or "state" not in hub:
+        return {"sent": False, "reason": "not_ready"}
+    async with hub["lock"]:
+        state = hub["state"]
+        settings = state.get("reminder_settings", {})
+        now = dt_util.now()
+        today = now.date().isoformat()
+        if not force:
+            if not settings.get("enabled", False) or now.hour != int(settings.get("hour", 8)):
+                return {"sent": False, "reason": "disabled_or_not_due"}
+            if state.get("reminder_last_sent") == today:
+                return {"sent": False, "reason": "already_sent"}
+        pending = [task for task in state.get("tasks", []) if not task.get("done") and task.get("due")
+                   and (task["due"] == today or (settings.get("include_overdue", True) and task["due"] < today))]
+        if not pending:
+            return {"sent": False, "reason": "no_tasks"}
+        member_names = {member["id"]: member.get("name", "Familienmitglied") for member in state.get("members", [])}
+        lines = []
+        for task in sorted(pending, key=lambda item: item["due"])[:20]:
+            assigned = ", ".join(member_names.get(mid, "Familienmitglied") for mid in task.get("assignees", [])) or "Nicht zugeordnet"
+            tag = "Überfällig" if task["due"] < today else "Heute"
+            lines.append(f"- **{tag}:** {task.get('title', 'Aufgabe')[:160]} ({assigned})")
+        if len(pending) > 20:
+            lines.append(f"- … und {len(pending)-20} weitere Aufgaben")
+        persistent_notification.async_create(hass, "\n".join(lines), title="Family Hub – Aufgabenerinnerung",
+                                             notification_id=f"{DOMAIN}_task_reminder")
+        if not force:
+            state["reminder_last_sent"] = today
+            await hub["store"].async_save(state)
+        return {"sent": True, "count": len(pending)}
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/reminder_settings_save",
+    vol.Required("enabled"): bool,
+    vol.Required("hour"): vol.In([8, 12, 18]),
+    vol.Required("include_overdue"): bool,
+})
+@websocket_api.async_response
+async def ws_reminder_settings_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    async with hub["lock"]:
+        hub["state"]["reminder_settings"] = {"enabled": msg["enabled"], "hour": msg["hour"], "include_overdue": msg["include_overdue"]}
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/reminder_test"})
+@websocket_api.async_response
+async def ws_reminder_test(hass, connection, msg):
+    if not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    result = await _send_task_reminder(hass, force=True)
+    connection.send_result(msg["id"], result)
+
+
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/version"})
 @websocket_api.async_response
 async def ws_version(hass, connection, msg):
@@ -780,7 +858,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_version, ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_reminder_settings_save, ws_reminder_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
