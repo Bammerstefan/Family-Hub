@@ -17,6 +17,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, PANEL_URL, STORAGE_KEY, STORAGE_VERSION, TITLE
 
@@ -857,13 +858,27 @@ async def ws_reminder_test(hass, connection, msg):
     connection.send_result(msg["id"], result)
 
 
+def _mobile_targets(hass):
+    """Find legacy mobile-app actions and newer mobile-app notification entities."""
+    targets = [
+        {"id": name, "name": name.removeprefix("mobile_app_").replace("_", " ") + " (App)", "kind": "service"}
+        for name in sorted(hass.services.async_services().get("notify", {}))
+        if name.startswith("mobile_app_")
+    ]
+    registry = er.async_get(hass)
+    for entry in registry.entities.values():
+        if entry.domain == "notify" and entry.platform == "mobile_app" and not entry.disabled_by:
+            targets.append({"id": "entity:" + entry.entity_id,
+                            "name": (entry.original_name or entry.entity_id) + " (Benachrichtigungsgerät)",
+                            "kind": "entity"})
+    return targets
+
+
 def _mobile_services(hass):
-    """Only official companion-app notify services, never arbitrary HA services."""
-    return sorted(name for name in hass.services.async_services().get("notify", {})
-                  if name.startswith("mobile_app_"))
+    return {target["id"] for target in _mobile_targets(hass)}
 
 
-async def _send_mobile_reminders(hass, *, test_member=None):
+async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
     """Send a daily private digest to the configured mobile device for each member."""
     hub = hass.data.get(DOMAIN)
     if not hub or "state" not in hub:
@@ -890,7 +905,7 @@ async def _send_mobile_reminders(hass, *, test_member=None):
         mid = member["id"]
         if test_member is not None and mid != test_member:
             continue
-        service = devices.get(mid, "")
+        service = test_target if test_member == mid and test_target else devices.get(mid, "")
         if not service or service not in available:
             if test_member == mid:
                 errors.append("Kein verfügbares Handy für dieses Familienmitglied ausgewählt")
@@ -909,8 +924,13 @@ async def _send_mobile_reminders(hass, *, test_member=None):
             if len(pending) > 5:
                 message += f" (+{len(pending)-5} weitere)"
         try:
-            await hass.services.async_call("notify", service,
-                {"title": "BamLabs Family Hub", "message": message}, blocking=True)
+            if service.startswith("entity:"):
+                await hass.services.async_call("notify", "send_message",
+                    {"title": "BamLabs Family Hub", "message": message},
+                    target={"entity_id": service.removeprefix("entity:")}, blocking=True)
+            else:
+                await hass.services.async_call("notify", service,
+                    {"title": "BamLabs Family Hub", "message": message}, blocking=True)
         except Exception as err:
             errors.append(f"{member['name']}: {err}")
             continue
@@ -928,7 +948,7 @@ async def ws_push_devices(hass, connection, msg):
     if not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
         return
-    connection.send_result(msg["id"], [{"id": s, "name": s.removeprefix("mobile_app_").replace("_", " ")} for s in _mobile_services(hass)])
+    connection.send_result(msg["id"], _mobile_targets(hass))
 
 
 @websocket_api.websocket_command({
@@ -955,7 +975,7 @@ async def ws_push_settings_save(hass, connection, msg):
     connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/push_test", vol.Required("member_id"): str})
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/push_test", vol.Required("member_id"): str, vol.Optional("device", default=""): str})
 @websocket_api.async_response
 async def ws_push_test(hass, connection, msg):
     hub = hass.data.get(DOMAIN)
@@ -965,7 +985,12 @@ async def ws_push_test(hass, connection, msg):
     if msg["member_id"] not in {m["id"] for m in hub["state"]["members"]}:
         connection.send_error(msg["id"], "not_found", "Familienmitglied nicht gefunden")
         return
-    connection.send_result(msg["id"], await _send_mobile_reminders(hass, test_member=msg["member_id"]))
+    device = msg.get("device", "")
+    if device and device not in _mobile_services(hass):
+        connection.send_error(msg["id"], "invalid_device", "Das ausgewählte Handy ist nicht mehr verfügbar. Bitte Geräte neu suchen.")
+        return
+    connection.send_result(msg["id"], await _send_mobile_reminders(
+        hass, test_member=msg["member_id"], test_target=device or None))
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/version"})

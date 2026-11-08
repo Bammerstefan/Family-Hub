@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.14";
+const FAMILY_HUB_UI_VERSION = "0.3.15";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -112,7 +112,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if (!this._hass || this.externalBusy) return;
     this.externalBusy = true;
     try {
-      this.data = await this._hass.callWS({type:"bamlabs_family_hub/calendar_member_assign", entity_id:entityId, member_id:memberId});
+      this.data = await this._hass.callWS({type:"bamlabs_family_hub/calendar_member_assign", entity_id:entityId, member_id:memberId,device:device||""});
       this.externalError = "";
     } catch(e) {this.externalError = e.message || String(e);}
     finally {this.externalBusy = false; this.render();}
@@ -468,10 +468,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {this.pushDevices = await this._hass.callWS({type:"bamlabs_family_hub/push_devices"});this.pushDevicesLoaded=true;this.render();}
     catch(e) {this.pushDevicesLoaded=true;this.error=e.message||String(e);this.render();}
   }
-  async testPush(memberId) {
+  async testPush(memberId, device) {
     try {
-      const result=await this._hass.callWS({type:"bamlabs_family_hub/push_test",member_id:memberId});
-      this.error=result.sent?"✅ Handy-Testnachricht wurde an den Home-Assistant-Benachrichtigungsdienst übergeben.":"Kein Push versendet: "+(result.errors||[]).join("; ");
+      const result=await this._hass.callWS({type:"bamlabs_family_hub/push_test",member_id:memberId,device:device||""});
+      this.error=result.sent?"✅ Home Assistant hat die Testnachricht angenommen. Wenn sie nicht ankommt, prüfe die Benachrichtigungsfreigabe der Home-Assistant-App und teste das Gerät unter Entwicklerwerkzeuge → Aktionen.":"⚠️ Keine Nachricht gesendet: "+((result.errors||[]).join("; ")||result.reason||"Unbekannte Ursache");
     } catch(e){this.error=e.message||String(e);}
     this.render();
   }
@@ -548,7 +548,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         const missing=this.el("option",null,`Nicht mehr verfügbar: ${configured}`);missing.value=configured;sel.append(missing);
       }
       sel.value=configured;deviceInputs[m.id]=sel;field.append(sel);
-      const line=this.el("div","actions");line.append(field,this.button("🔔 Test ans Handy",()=>this.testPush(m.id),"btn secondary"));push.append(line);
+      const line=this.el("div","actions");line.append(field,this.button("🔔 Test ans Handy",()=>this.testPush(m.id,sel.value),"btn secondary"));push.append(line);
     }
     const pushActions=this.el("div","actions");
     pushActions.append(this.button("✓ Handy-Zuordnung speichern",()=>this.request("push_settings_save",{enabled:pushEnabled.checked,devices:Object.fromEntries(Object.entries(deviceInputs).map(([k,v])=>[k,v.value]))}),"btn"));
