@@ -37,3 +37,7 @@ Getestet: Python-Kompilierung, JavaScript-Syntaxprüfung und ZIP-Struktur. Kein 
 - Elternübersicht: erledigte/offene/überfällige Aufgaben pro Person mit Fortschrittsbalken.
 - Aufgabenansicht: nach Familienmitglied filtern.
 - Aufgaben und Termine bleiben im lokalen HA-Speicher unverändert.
+
+
+## v0.3.11 – Wochenplan
+Der Eltern-Menüpunkt „Wochenplan“ zeigt sieben Tage mit Aufgaben und Terminen. Aufgaben ohne Fälligkeitsdatum bleiben in der Aufgabenliste.

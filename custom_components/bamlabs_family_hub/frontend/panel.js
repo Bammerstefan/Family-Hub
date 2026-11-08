@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.10";
+const FAMILY_HUB_UI_VERSION = "0.3.11";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -15,6 +15,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this._syncInterval = null;
     this.calendarMode = "month";
     this.calendarAnchor = new Date();
+    this.weekAnchor = new Date();
+    this.weekMemberFilter = "";
     this.editEvent = null;
     this.tab = "today";
     this.busy = false;
@@ -129,7 +131,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if (!this._hass || !this.loaded || this.externalBusy || this.data._role === "child") return;
     // Avoid repeated network requests when the user quickly changes views.
     if (force && Date.now() - this.externalLastAttempt < 15000) return;
-    const a=this.calendarAnchor;
+    const a=this.tab === "week" ? this.weekAnchor : this.calendarAnchor;
     const start=this.addDays(this.monday(new Date(a.getFullYear(),a.getMonth(),1)),-7);
     const end=this.addDays(this.monday(new Date(a.getFullYear(),a.getMonth()+1,0)),13);
     const from=this.isoDate(start), to=this.isoDate(end), range=`${from}|${to}`;
@@ -172,9 +174,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       *,*:before,*:after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}
       .page{max-width:1120px;margin:0 auto;padding:24px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:25px;font-weight:800;letter-spacing:-.6px}.small{font-size:13px;color:var(--secondary-text-color,#697386)}.nav{display:flex;gap:9px;overflow:auto;margin:23px 0}.tab{border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);padding:11px 16px;border-radius:12px;color:inherit;white-space:nowrap;font-weight:650}.tab.selected{background:#1464db;color:white;border-color:#1464db}
       .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
-      .progress-person{border-top:1px solid var(--divider-color,#dfe5ee);padding:14px 0;display:grid;gap:8px}.progress-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}.progress-track{height:12px;background:var(--secondary-background-color,#eef1f6);border-radius:999px;overflow:hidden}.progress-fill{height:100%;border-radius:999px;transition:width .2s}.progress-person .btn{justify-self:start} 
+      .week-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:9px}.week-column{border:1px solid var(--divider-color,#dfe5ee);border-radius:12px;padding:10px;min-width:0}.week-column.today{border-color:var(--primary-color,#1464db);border-width:2px}.week-card{padding:8px;margin-top:9px;background:var(--secondary-background-color,#eef1f6);border-radius:9px;border-left:4px solid #1464db;overflow-wrap:anywhere;font-size:13px}.week-card .check{width:18px;height:18px}.week-check{display:flex;gap:8px;align-items:flex-start}.week-meta{font-size:11px;opacity:.8;margin-top:4px}.week-summary{margin:10px 0 18px}.week-column h3{font-size:14px;margin:0 0 7px}.week-column .small{font-size:11px} .progress-person{border-top:1px solid var(--divider-color,#dfe5ee);padding:14px 0;display:grid;gap:8px}.progress-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}.progress-track{height:12px;background:var(--secondary-background-color,#eef1f6);border-radius:999px;overflow:hidden}.progress-fill{height:100%;border-radius:999px;transition:width .2s}.progress-person .btn{justify-self:start} 
       .child-welcome{margin-bottom:16px}.child-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}.child-stat{display:grid;gap:4px;align-content:center;border-radius:13px;background:var(--secondary-background-color,#eef1f6);padding:12px;text-align:center}.child-stat-number{font-size:24px;font-weight:800}.child-task{min-height:62px;cursor:pointer}.child-task .check{width:28px;height:28px;flex-shrink:0}.child-action{min-height:48px;margin-top:12px}
-      @media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}}`;
+      @media(max-width:850px){.week-days{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:450px){.week-days{grid-template-columns:1fr}}@media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}}`;
     root.append(style);
     const page=this.el("main","page");
     const header=this.el("div","top");
@@ -194,9 +196,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const nav=this.el("nav","nav");
     const child = this.data._role === "child";
     const tabs = child ? [["today","🏡 Mein Tag"],["tasks","✅ Aufgaben"],["calendar","📅 Termine"]]
-                       : [["today","Übersicht"],["calendar","Kalender"],["tasks","Aufgaben"],["members","Familie"],["settings","⚙️ Einstellungen"]];
+                       : [["today","Übersicht"],["week","Wochenplan"],["calendar","Kalender"],["tasks","Aufgaben"],["members","Familie"],["settings","⚙️ Einstellungen"]];
     tabs.forEach(([id,label])=>{
-      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if(id==="calendar"&&!child)this.refreshExternalEvents(true);},`tab ${this.tab===id?"selected":""}`));
+      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if((id==="calendar"||id==="week")&&!child)this.refreshExternalEvents();},`tab ${this.tab===id?"selected":""}`));
     });page.append(nav);
     if(this.error) page.append(this.el("div","notice",`Hinweis: ${this.error}`));
     if(!this.loaded) {page.append(this.el("div","panel",this.busy?"Daten werden geladen …":"Keine Verbindung zu Family Hub. Bitte Integration prüfen."));root.append(page);return;}
@@ -204,6 +206,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       this.renderChild(page);
     }else{
       if(this.tab==="today") this.renderToday(page);
+      if(this.tab==="week") this.renderWeek(page);
       if(this.tab==="members") this.renderMembers(page);
       if(this.tab==="calendar") this.renderCalendar(page);
       if(this.tab==="tasks") this.renderTasks(page);
@@ -211,6 +214,78 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     }
     page.append(this.el("div","small footer","Daten werden lokal in Home Assistant gespeichert. PRO-Funktionen folgen in späteren Versionen."));
     root.append(page);
+  }
+  renderWeek(page) {
+    const start=this.monday(this.weekAnchor);
+    const end=this.addDays(start,6);
+    const from=this.isoDate(start), to=this.isoDate(end);
+    const today=this.isoDate(new Date());
+    const panel=this.el("section","panel");
+    panel.append(this.cardTitle("🗓️ Wochenplan der Familie"));
+    panel.append(this.el("p","small","Alle Termine und fälligen Aufgaben auf einen Blick. Häkchen ändern den Aufgabenstatus direkt."));
+    const controls=this.el("div","calbar");
+    const dates=this.el("div","actions");
+    dates.append(this.button("‹ Vorherige",()=>this.shiftWeek(-7),"btn secondary"));
+    dates.append(this.button("Diese Woche",()=>{this.weekAnchor=new Date();this.render();this.refreshExternalEvents();},"btn secondary"));
+    dates.append(this.button("Nächste ›",()=>this.shiftWeek(7),"btn secondary"));
+    controls.append(dates);
+    controls.append(this.el("strong",null,`${this.dateLabel(from)} – ${this.dateLabel(to)}`));
+    const filter=this.el("label","field");
+    filter.append(this.el("span",null,"Person"));
+    const select=this.el("select");
+    const all=this.el("option",null,"Alle Familienmitglieder");all.value="";select.append(all);
+    for(const member of this.data.members){const option=this.el("option",null,member.name);option.value=member.id;select.append(option);}
+    select.value=this.weekMemberFilter;
+    select.addEventListener("change",()=>{this.weekMemberFilter=select.value;this.render();});
+    filter.append(select);controls.append(filter);panel.append(controls);
+    const visible=(members)=>!this.weekMemberFilter||!members?.length||(members||[]).includes(this.weekMemberFilter);
+    const allTasks=(this.data.tasks||[]).filter(t=>!t.done&&t.due&&t.due>=from&&t.due<=to&&visible(t.assignees));
+    // Only items overlapping the week are shown, including multi-day and repeating events.
+    const events=this.occurrences(from,to).filter(o=>visible(o.event.members));
+    const summary=this.el("div","small week-summary",`${allTasks.length} offene Aufgaben · ${events.length} Termine in dieser Woche`);
+    panel.append(summary);
+    const days=this.el("div","week-days");
+    for(let i=0;i<7;i++) {
+      const date=this.addDays(start,i), iso=this.isoDate(date);
+      const day=this.el("section",`week-column${iso===today?" today":""}`);
+      day.append(this.el("h3",null,date.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"numeric"})));
+      const tasks=allTasks.filter(t=>t.due===iso);
+      for(const task of tasks) {
+        const card=this.el("div","week-card");
+        const row=this.el("label","week-check");
+        const cb=this.el("input","check");cb.type="checkbox";cb.checked=false;cb.disabled=this.busy;
+        cb.setAttribute("aria-label",`${task.title} erledigen`);
+        cb.addEventListener("change",()=>this.request("task_toggle",{task_id:task.id}));
+        const title=this.el("span",null,task.title);row.append(cb,title);card.append(row);
+        const assigned=(task.assignees||[]).map(id=>this.memberName(id)).join(", ");
+        if(assigned)card.append(this.el("div","week-meta",assigned));
+        if(task.points)card.append(this.el("div","week-meta",`⭐ ${task.points} Punkte`));
+        if(task.assignees?.length===1){const person=this.data.members.find(m=>m.id===task.assignees[0]);if(person)card.style.borderLeftColor=person.color;}
+        day.append(card);
+      }
+      for(const occurrence of events.filter(o=>o.start<=iso&&o.end>=iso)) {
+        const card=this.el("div","week-card");card.style.borderLeftColor=this.eventColor(occurrence.event);
+        const label=occurrence.time&&occurrence.start===iso?`${occurrence.time} ${occurrence.event.title}`:occurrence.event.title;
+        card.append(this.el("div",null,label));
+        if(occurrence.event.members?.length)card.append(this.el("div","week-meta",occurrence.event.members.map(id=>this.memberName(id)).join(", ")));
+        if(occurrence.event.external)card.append(this.el("div","week-meta","Home Assistant · nur lesen"));
+        day.append(card);
+      }
+      if(!tasks.length&&!events.some(o=>o.start<=iso&&o.end>=iso))day.append(this.el("div","small","Keine Einträge"));
+      days.append(day);
+    }
+    panel.append(days);
+    const actions=this.el("div","actions");actions.style.marginTop="20px";
+    actions.append(this.button("+ Aufgabe",()=>{this.tab="tasks";this.editTask={title:"",description:"",due:from,priority:"normal",repeat:"none",points:0,assignees:[]};this.render();}));
+    actions.append(this.button("+ Termin",()=>{this.tab="calendar";this.calendarAnchor=new Date(start);this.editEvent={title:"",description:"",start:`${from}T09:00`,end:`${from}T10:00`,all_day:false,repeat:"none",members:[]};this.render();},"btn secondary"));
+    panel.append(actions);
+    page.append(panel);
+    if(this.externalError)page.append(this.el("div","notice",`Kalendersynchronisierung: ${this.externalError}`));
+  }
+  shiftWeek(days) {
+    this.weekAnchor=this.addDays(this.weekAnchor,days);
+    this.render();
+    this.refreshExternalEvents();
   }
   renderToday(page) {
     const pending=this.data.tasks.filter(t=>!t.done);
