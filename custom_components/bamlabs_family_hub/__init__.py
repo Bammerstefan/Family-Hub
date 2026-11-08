@@ -110,7 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         def _schedule_tick(now):
             hass.async_create_task(_reminder_tick(now))
         hub_data["reminder_unsubscribe"] = async_track_time_change(
-            hass, _schedule_tick, hour=list(range(24)), minute=0, second=0
+            hass, _schedule_tick, hour=list(range(24)), minute=list(range(0, 60, 5)), second=0
         )
 
     if not hub_data.get("panel_registered"):
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.16",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.17",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -912,7 +912,7 @@ async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
             continue
         if test_member is None and last.get(mid) == today:
             continue
-        if test_member is None and now.hour != int(member_hours.get(mid, reminder.get("hour", 8))):
+        if test_member is None and now.hour < int(member_hours.get(mid, reminder.get("hour", 8))):
             continue
         allow_overdue = member_overdue.get(mid, include_overdue) is not False
         pending = [task for task in tasks if not task.get("done") and mid in task.get("assignees", [])
@@ -946,6 +946,57 @@ async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
                 hub["state"].setdefault("push_last_sent", {})[mid] = today
                 await hub["store"].async_save(hub["state"])
     return {"sent": sent, "errors": errors[:5]}
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/push_diagnose"})
+@websocket_api.async_response
+async def ws_push_diagnose(hass, connection, msg):
+    """Explain whether the automatic push reminder can currently run."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    now = dt_util.now()
+    today = now.date().isoformat()
+    async with hub["lock"]:
+        state = hub["state"]
+        push = state.get("push_settings", {})
+        reminder = state.get("reminder_settings", {})
+        members = list(state.get("members", []))
+        tasks = list(state.get("tasks", []))
+        last = dict(state.get("push_last_sent", {}))
+        devices = dict(push.get("devices", {}))
+        hours = dict(push.get("hours", {}))
+        per_member_overdue = dict(push.get("include_overdue", {}))
+        enabled = bool(push.get("enabled", False))
+    available = _mobile_services(hass)
+    results = []
+    for member in members:
+        mid = member["id"]
+        hour = int(hours.get(mid, reminder.get("hour", 8)))
+        overdue = per_member_overdue.get(mid, reminder.get("include_overdue", True)) is not False
+        due_count = sum(1 for task in tasks if not task.get("done") and mid in task.get("assignees", [])
+                        and task.get("due") and (task["due"] == today or (overdue and task["due"] < today)))
+        dev = devices.get(mid, "")
+        sent_today = last.get(mid) == today
+        if not enabled:
+            reason = "Automatische Handy-Erinnerungen sind ausgeschaltet. Bitte aktivieren und speichern."
+        elif not dev:
+            reason = "Kein Handy zugeordnet. Bitte Gerät auswählen und Zuordnung speichern."
+        elif dev not in available:
+            reason = "Das gespeicherte Handy ist nicht mehr in Home Assistant verfügbar. Handys neu suchen."
+        elif sent_today:
+            reason = "Heute wurde für diese Person bereits eine automatische Erinnerung versendet."
+        elif not due_count:
+            reason = "Keine offenen Aufgaben für heute oder früher gefunden (oder überfällige Aufgaben deaktiviert)."
+        elif now.hour < hour:
+            reason = "Geplante Erinnerungszeit ist heute noch nicht erreicht."
+        else:
+            reason = "Alle Bedingungen erfüllt. Die automatische Prüfung erfolgt alle fünf Minuten."
+        results.append({"name": member.get("name", "Person"), "hour": hour, "due": due_count,
+                        "enabled": enabled, "device": bool(dev), "sent_today": sent_today,
+                        "reason": reason})
+    connection.send_result(msg["id"], {"local_time": now.strftime("%d.%m.%Y %H:%M"), "members": results})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/push_devices"})
@@ -1028,7 +1079,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,

@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.16";
+const FAMILY_HUB_UI_VERSION = "0.3.17";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -475,6 +475,14 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     } catch(e){this.error=e.message||String(e);}
     this.render();
   }
+  async diagnosePush() {
+    try {
+      const result=await this._hass.callWS({type:"bamlabs_family_hub/push_diagnose"});
+      const lines=(result.members||[]).map(m=>`${m.name} (${String(m.hour).padStart(2,"0")}:00 Uhr, ${m.due} offene fällige Aufgaben): ${m.reason}`);
+      this.error=`🔎 Erinnerungsprüfung, ${result.local_time}:\n${lines.join("\n")||"Keine Familienmitglieder angelegt."}`;
+    } catch(e){this.error=e.message||String(e);}
+    this.render();
+  }
   renderSettings(page) {
     const intro=this.el("section","panel");
     intro.append(this.cardTitle("⚙️ Einstellungen"));
@@ -532,7 +540,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     remind.append(buttons);intro.append(remind);
     const push=this.el("section","panel");
     push.append(this.el("h3",null,"📲 Erinnerungen aufs Handy"));
-    push.append(this.el("p","small","Nur mit der offiziellen Home-Assistant-Handy-App. Jeder Person ein Handy zuordnen; dann werden ausschließlich ihre eigenen fälligen Aufgaben geschickt. Standardmäßig ausgeschaltet. Wähle die Uhrzeit für jede Person. Bei älteren Handy-Diensten öffnet das Tippen auf die Push-Nachricht direkt den Family Hub."));
+    push.append(this.el("p","small","Nur mit der offiziellen Home-Assistant-Handy-App. Jeder Person ein Handy zuordnen; dann werden ausschließlich ihre eigenen fälligen Aufgaben geschickt. Standardmäßig ausgeschaltet. Wähle die Uhrzeit für jede Person. Automatische Nachrichten kommen nur bei offenen heute fälligen oder überfälligen Aufgaben; nach einem Neustart auch dann, wenn die Erinnerungszeit schon vorbei ist. Bei älteren Handy-Diensten öffnet das Tippen auf die Push-Nachricht direkt den Family Hub."));
     const ps=this.data.push_settings||{enabled:false,devices:{}};
     const pushEnabled=this.el("input");pushEnabled.type="checkbox";pushEnabled.checked=!!ps.enabled;
     const enableRow=this.el("label","person-choice");enableRow.append(pushEnabled,this.el("span",null,"Tägliche Handy-Erinnerungen aktivieren"));push.append(enableRow);
@@ -567,6 +575,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       hours:Object.fromEntries(Object.entries(hourInputs).map(([k,v])=>[k,Number(v.value)])),
       include_overdue:Object.fromEntries(Object.entries(overdueInputs).map(([k,v])=>[k,v.checked]))}),"btn"));
     pushActions.append(this.button("🔄 Handys suchen",()=>this.loadPushDevices(),"btn secondary"));
+    pushActions.append(this.button("🔎 Erinnerungen prüfen",()=>this.diagnosePush(),"btn secondary"));
     push.append(pushActions);intro.append(push);
 
     intro.append(this.el("h3",null,"📱 Kinder & Handy-Zugang"));
