@@ -110,7 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         def _schedule_tick(now):
             hass.async_create_task(_reminder_tick(now))
         hub_data["reminder_unsubscribe"] = async_track_time_change(
-            hass, _schedule_tick, hour=[8, 12, 18], minute=0, second=0
+            hass, _schedule_tick, hour=list(range(24)), minute=0, second=0
         )
 
     if not hub_data.get("panel_registered"):
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.14",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.16",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -892,13 +892,13 @@ async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
         if test_member is None and not settings.get("enabled", False):
             return {"sent": 0, "reason": "disabled"}
         reminder = state.get("reminder_settings", {})
-        if test_member is None and now.hour != int(reminder.get("hour", 8)):
-            return {"sent": 0, "reason": "not_due"}
         devices = dict(settings.get("devices", {}))
         last = dict(state.get("push_last_sent", {}))
         members = list(state.get("members", []))
         tasks = list(state.get("tasks", []))
         include_overdue = reminder.get("include_overdue", True)
+        member_hours = dict(settings.get("hours", {}))
+        member_overdue = dict(settings.get("include_overdue", {}))
     sent = 0
     errors = []
     for member in members:
@@ -912,8 +912,11 @@ async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
             continue
         if test_member is None and last.get(mid) == today:
             continue
+        if test_member is None and now.hour != int(member_hours.get(mid, reminder.get("hour", 8))):
+            continue
+        allow_overdue = member_overdue.get(mid, include_overdue) is not False
         pending = [task for task in tasks if not task.get("done") and mid in task.get("assignees", [])
-                   and task.get("due") and (task["due"] == today or (include_overdue and task["due"] < today))]
+                   and task.get("due") and (task["due"] == today or (allow_overdue and task["due"] < today))]
         if not pending and test_member is None:
             continue
         if test_member is not None:
@@ -929,8 +932,11 @@ async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
                     {"title": "BamLabs Family Hub", "message": message},
                     target={"entity_id": service.removeprefix("entity:")}, blocking=True)
             else:
+                # The mobile companion app recognizes both iOS url and Android clickAction.
+                # Point to the existing HA panel, not an unauthenticated external address.
                 await hass.services.async_call("notify", service,
-                    {"title": "BamLabs Family Hub", "message": message}, blocking=True)
+                    {"title": "BamLabs Family Hub", "message": message,
+                     "data": {"url": "/" + PANEL_URL, "clickAction": "/" + PANEL_URL}}, blocking=True)
         except Exception as err:
             errors.append(f"{member['name']}: {err}")
             continue
@@ -955,6 +961,8 @@ async def ws_push_devices(hass, connection, msg):
     vol.Required("type"): f"{DOMAIN}/push_settings_save",
     vol.Required("enabled"): bool,
     vol.Required("devices"): dict,
+    vol.Optional("hours", default={}): dict,
+    vol.Optional("include_overdue", default={}): dict,
 })
 @websocket_api.async_response
 async def ws_push_settings_save(hass, connection, msg):
@@ -970,7 +978,19 @@ async def ws_push_settings_save(hass, connection, msg):
                 not isinstance(v, str) or (v and v not in available) for k, v in incoming.items()):
             connection.send_error(msg["id"], "invalid_devices", "Ungültige Handyzuordnung")
             return
-        hub["state"]["push_settings"] = {"enabled": msg["enabled"], "devices": {k: v for k, v in incoming.items() if v}}
+        raw_hours = msg.get("hours", {})
+        raw_overdue = msg.get("include_overdue", {})
+        if (len(raw_hours) > 50 or len(raw_overdue) > 50 or
+            any(k not in members or type(v) is not int or v < 0 or v > 23
+                for k, v in raw_hours.items()) or
+            any(k not in members or type(v) is not bool for k, v in raw_overdue.items())):
+            connection.send_error(msg["id"], "invalid_settings", "Ungültige Erinnerungszeiten")
+            return
+        hub["state"]["push_settings"] = {
+            "enabled": msg["enabled"],
+            "devices": {k: v for k, v in incoming.items() if v},
+            "hours": dict(raw_hours), "include_overdue": dict(raw_overdue),
+        }
         await hub["store"].async_save(hub["state"])
     connection.send_result(msg["id"], _visible_state(hub, connection))
 

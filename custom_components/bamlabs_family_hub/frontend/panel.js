@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.15";
+const FAMILY_HUB_UI_VERSION = "0.3.16";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -532,13 +532,15 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     remind.append(buttons);intro.append(remind);
     const push=this.el("section","panel");
     push.append(this.el("h3",null,"📲 Erinnerungen aufs Handy"));
-    push.append(this.el("p","small","Nur mit der offiziellen Home-Assistant-Handy-App. Jeder Person ein Handy zuordnen; dann werden ausschließlich ihre eigenen fälligen Aufgaben geschickt. Standardmäßig ausgeschaltet. Uhrzeit und überfällige Aufgaben werden aus den Erinnerungs-Einstellungen oben übernommen."));
+    push.append(this.el("p","small","Nur mit der offiziellen Home-Assistant-Handy-App. Jeder Person ein Handy zuordnen; dann werden ausschließlich ihre eigenen fälligen Aufgaben geschickt. Standardmäßig ausgeschaltet. Wähle die Uhrzeit für jede Person. Bei älteren Handy-Diensten öffnet das Tippen auf die Push-Nachricht direkt den Family Hub."));
     const ps=this.data.push_settings||{enabled:false,devices:{}};
     const pushEnabled=this.el("input");pushEnabled.type="checkbox";pushEnabled.checked=!!ps.enabled;
     const enableRow=this.el("label","person-choice");enableRow.append(pushEnabled,this.el("span",null,"Tägliche Handy-Erinnerungen aktivieren"));push.append(enableRow);
     if(!this.pushDevicesLoaded)push.append(this.el("p","small","Handy-Liste wird geladen …"));
     if(this.pushDevicesLoaded && !this.pushDevices.length)push.append(this.el("p","notice","Noch kein Handy gefunden. Installiere und verbinde die Home-Assistant-App auf dem jeweiligen Handy und erlaube Benachrichtigungen. Anschließend hier neu laden."));
     const deviceInputs={};
+    const hourInputs={};
+    const overdueInputs={};
     for(const m of this.data.members){
       const field=this.el("label","field");field.append(this.el("span","field-title",`Handy für ${m.name}`));
       const sel=this.el("select");const none=this.el("option",null,"Kein Handy ausgewählt");none.value="";sel.append(none);
@@ -548,10 +550,22 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         const missing=this.el("option",null,`Nicht mehr verfügbar: ${configured}`);missing.value=configured;sel.append(missing);
       }
       sel.value=configured;deviceInputs[m.id]=sel;field.append(sel);
-      const line=this.el("div","actions");line.append(field,this.button("🔔 Test ans Handy",()=>this.testPush(m.id,sel.value),"btn secondary"));push.append(line);
+      const timing=this.el("label","field");timing.append(this.el("span","field-title",`Erinnerungszeit für ${m.name}`));
+      const time=this.el("select");
+      for(let h=0;h<24;h++){const opt=this.el("option",null,`${String(h).padStart(2,"0")}:00 Uhr`);opt.value=String(h);time.append(opt);}
+      time.value=String((ps.hours||{})[m.id]??settings.hour??8);
+      timing.append(time);hourInputs[m.id]=time;
+      const late=this.el("input");late.type="checkbox";late.checked=(ps.include_overdue||{})[m.id]??(settings.include_overdue!==false);
+      overdueInputs[m.id]=late;
+      const lateRow=this.el("label","person-choice");lateRow.append(late,this.el("span",null,`Auch überfällige Aufgaben für ${m.name} melden`));
+      push.append(field,timing,lateRow);
+      const line=this.el("div","actions");line.append(this.button("🔔 Test ans Handy",()=>this.testPush(m.id,sel.value),"btn secondary"));push.append(line);
     }
     const pushActions=this.el("div","actions");
-    pushActions.append(this.button("✓ Handy-Zuordnung speichern",()=>this.request("push_settings_save",{enabled:pushEnabled.checked,devices:Object.fromEntries(Object.entries(deviceInputs).map(([k,v])=>[k,v.value]))}),"btn"));
+    pushActions.append(this.button("✓ Handy-Zuordnung speichern",()=>this.request("push_settings_save",{enabled:pushEnabled.checked,
+      devices:Object.fromEntries(Object.entries(deviceInputs).map(([k,v])=>[k,v.value])),
+      hours:Object.fromEntries(Object.entries(hourInputs).map(([k,v])=>[k,Number(v.value)])),
+      include_overdue:Object.fromEntries(Object.entries(overdueInputs).map(([k,v])=>[k,v.checked]))}),"btn"));
     pushActions.append(this.button("🔄 Handys suchen",()=>this.loadPushDevices(),"btn secondary"));
     push.append(pushActions);intro.append(push);
 
