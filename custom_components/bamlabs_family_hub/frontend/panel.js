@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.9";
+const FAMILY_HUB_UI_VERSION = "0.3.10";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {members: [], tasks: [], events: [], external_calendars: [], calendar_members: {}};
+    this.data = {members: [], tasks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: []};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -455,6 +455,55 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     }
     page.append(items);
   }
+  pointBalance(memberId) {
+    return (this.data.point_entries || []).filter(e => e.member_id === memberId).reduce((sum,e) => sum + Number(e.amount || 0), 0);
+  }
+  renderRewards(page, child=false) {
+    const members = this.data.members || [];
+    const rewards = this.data.rewards || [];
+    const section = this.el("section","panel");
+    section.append(this.cardTitle("🏆 Punkte & Belohnungen"));
+    section.append(this.el("p","small",child ? "Für erledigte Aufgaben sammelst du Sterne. Deine Eltern können sie gegen Belohnungen eintauschen." : "Eltern vergeben Punkte bei Aufgaben und lösen Belohnungen ein. Selbst angelegte Kinderaufgaben bringen keine Punkte."));
+    members.forEach(m => {
+      const item = this.el("div","item");
+      item.append(this.el("strong",null,m.name),this.el("span","chip",`⭐ ${this.pointBalance(m.id)} Punkte`));
+      section.append(item);
+    });
+    if (rewards.length) {
+      section.append(this.el("h3",null,"Belohnungen"));
+      rewards.forEach(reward => {
+        const item=this.el("div","item");
+        const info=this.el("div","item-main");
+        info.append(this.el("strong",null,reward.title),this.el("div","small",`⭐ ${reward.cost} Punkte`));
+        item.append(info);
+        if (!child) {
+          const actions=this.el("div","actions");
+          const picker=this.el("select");
+          members.forEach(m => {const opt=this.el("option",null,m.name);opt.value=m.id;picker.append(opt);});
+          actions.append(picker);
+          actions.append(this.button("Einlösen",()=>{
+            if (!picker.value) return;
+            const name=members.find(m=>m.id===picker.value)?.name || "das Mitglied";
+            if (confirm(`${reward.title} für ${name} einlösen (${reward.cost} Punkte)?`)) this.request("reward_redeem",{reward_id:reward.id,member_id:picker.value});
+          },"btn secondary"));
+          actions.append(this.button("×",()=>{if(confirm(`Belohnung „${reward.title}“ löschen?`)) this.request("reward_delete",{reward_id:reward.id});},"btn secondary danger"));
+          item.append(actions);
+        }
+        section.append(item);
+      });
+    } else section.append(this.el("p","small","Noch keine Belohnungen angelegt."));
+    if (!child) {
+      const form=this.el("form","formgrid");
+      const title=this.input("Neue Belohnung","text","","rewardTitle");title.querySelector("input").required=true;
+      const cost=this.input("Benötigte Punkte","number","10","rewardCost");
+      cost.querySelector("input").min="1";cost.querySelector("input").max="10000";cost.querySelector("input").required=true;
+      const submit=this.el("button","btn","Belohnung hinzufügen");submit.type="submit";
+      form.append(title,cost,submit);
+      form.addEventListener("submit",e=>{e.preventDefault();this.request("reward_save",{title:title.querySelector("input").value,cost:Number(cost.querySelector("input").value)});});
+      section.append(form);
+    }
+    page.append(section);
+  }
   renderChild(page) {
     const me = this.data.members[0];
     const tasks = this.data.tasks || [];
@@ -478,6 +527,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     welcome.append(stats);
     if(overdue) welcome.append(this.el("p", "notice", `⏰ ${overdue} ${overdue===1?"Aufgabe ist":"Aufgaben sind"} überfällig.`));
     page.append(welcome);
+    if(this.tab === "today") this.renderRewards(page, true);
+    if(this.tab === "tasks") this.renderRewards(page, true);
     if(this.tab === "today" || this.tab === "tasks") {
       const section = this.el("section", "panel");
       section.append(this.cardTitle("✅ Meine offenen Aufgaben"));
@@ -558,6 +609,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     check.setAttribute("aria-label",`${task.title} ${task.done?"wieder öffnen":"erledigen"}`);
     check.addEventListener("change",()=>this.request("task_toggle",{task_id:task.id}));
     const details=this.el("span","item-main");details.append(this.el("strong","item-title",task.title));
+    if(task.points > 0) details.append(this.el("div","small",`⭐ ${task.points} Punkte`));
     if(task.repeat && task.repeat!=="none") details.append(this.el("div","small","🔁 Wiederkehrende Aufgabe"));
     if(task.due){
       const due=this.el("div","small",`Bis ${this.dateLabel(task.due)}`);
@@ -587,7 +639,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   }
   renderTasks(page) {
     const card=this.el("section","panel");card.append(this.cardTitle("Aufgaben & Haushalt"));
-    card.append(this.button(this.editTask?"Bearbeitung abbrechen":"+ Neue Aufgabe",()=>{this.editTask=this.editTask?null:{title:"",description:"",due:"",priority:"normal",repeat:"none",assignees:[]};this.render();}));
+    card.append(this.button(this.editTask?"Bearbeitung abbrechen":"+ Neue Aufgabe",()=>{this.editTask=this.editTask?null:{title:"",description:"",due:"",priority:"normal",repeat:"none",points:0,assignees:[]};this.render();}));
     if(this.editTask){
       const f=this.el("form","formgrid");const title=this.input("Aufgabe","text",this.editTask.title,"title");title.querySelector("input").required=true;
       const due=this.input("Fällig am (optional)","date",this.editTask.due,"due");
@@ -599,14 +651,16 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const repeat=this.el("select");[["none","Einmalig"],["daily","Jeden Tag"],["weekly","Jede Woche"],["biweekly","Alle 2 Wochen"],["monthly","Jeden Monat"],["yearly","Jedes Jahr"]].forEach(([id,label])=>{const opt=this.el("option",null,label);opt.value=id;repeat.append(opt);});
       repeat.value=this.editTask.repeat||"none";recurring.append(repeat);
       recurring.append(this.el("span","small","Bei Wiederholung bitte den ersten Fälligkeitstag wählen (z. B. Samstag). Nach dem Abhaken entsteht automatisch der nächste Termin."));
+      const earned=this.input("Punkte für diese Aufgabe (0–100)","number",String(this.editTask.points||0),"points");
+      earned.querySelector("input").min="0";earned.querySelector("input").max="100";
       const assigned=this.el("fieldset","field full");assigned.style.border="0";assigned.style.padding="0";
       assigned.append(this.el("legend","field-title","Zuständig (mehrere möglich)"));
       const checks=[];
       this.data.members.forEach(m=>{const label=this.el("label","person-choice");const ch=this.el("input");ch.type="checkbox";ch.value=m.id;ch.checked=this.editTask.assignees.includes(m.id);checks.push(ch);label.append(ch,this.el("span",null,m.name));assigned.append(label);});
       if(!this.data.members.length)assigned.append(this.el("span","small","Noch keine Personen angelegt – Aufgabe kann auch unzugeordnet bleiben."));
       const bottom=this.el("div","full");const save=this.el("button","btn","Aufgabe speichern");save.type="submit";bottom.append(save);
-      f.append(title,due,priority,recurring,desc,assigned,bottom);
-      f.addEventListener("submit",e=>{e.preventDefault();this.request("task_save",{task_id:this.editTask.id||"",title:title.querySelector("input").value,description:ta.value,due:due.querySelector("input").value,priority:select.value,repeat:repeat.value,assignees:checks.filter(c=>c.checked).map(c=>c.value)});});
+      f.append(title,due,priority,recurring,earned,desc,assigned,bottom);
+      f.addEventListener("submit",e=>{e.preventDefault();this.request("task_save",{task_id:this.editTask.id||"",title:title.querySelector("input").value,description:ta.value,due:due.querySelector("input").value,priority:select.value,repeat:repeat.value,points:Number(earned.querySelector("input").value),assignees:checks.filter(c=>c.checked).map(c=>c.value)});});
       card.append(f);
     }
     const filter=this.el("label","field");filter.append(this.el("span","field-title","Aufgaben anzeigen für"));
@@ -621,12 +675,14 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(!pending.length)card.append(this.el("div","empty","Keine offenen Aufgaben."));else pending.forEach(t=>card.append(this.taskRow(t)));
     card.append(this.el("h3",null,`Erledigt (${done.length})`));
     done.forEach(t=>card.append(this.taskRow(t)));page.append(card);
+    this.renderRewards(page);
   }
   taskRow(t) {
     const r=this.el("div",`item ${t.done?"done":""}`);const ch=this.el("input","check");ch.type="checkbox";ch.checked=!!t.done;ch.title="Erledigt ändern";ch.disabled=this.busy;ch.addEventListener("change",()=>this.request("task_toggle",{task_id:t.id}));r.append(ch);
     const main=this.el("div","item-main");main.append(this.el("div","item-title",t.title));
     if(t.description)main.append(this.el("div","desc",t.description));
     const tags=this.el("div","chips");if(t.due)tags.append(this.el("span","chip",`📅 ${this.dateLabel(t.due)}`));
+    if(t.points>0)tags.append(this.el("span","chip",`⭐ ${t.points} Punkte`));
     if(t.priority==="high")tags.append(this.el("span","chip tag-high","Wichtig"));
     const repeatNames={daily:"Täglich",weekly:"Wöchentlich",biweekly:"Alle 2 Wochen",monthly:"Monatlich",yearly:"Jährlich"};
     if(repeatNames[t.repeat])tags.append(this.el("span","chip",`🔁 ${repeatNames[t.repeat]}`));

@@ -89,7 +89,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock})
@@ -110,7 +110,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.9",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.10",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -152,7 +152,9 @@ def _visible_state(hub, connection):
             "members": [m for m in state["members"] if m["id"] == member_id],
             "tasks": [t for t in state["tasks"] if member_id in t.get("assignees", [])],
             "events": [e for e in state["events"] if member_id in e.get("members", [])],
-            "external_calendars": [], "calendar_members": {}}
+            "external_calendars": [], "calendar_members": {},
+            "rewards": state.get("rewards", []),
+            "point_entries": [e for e in state.get("point_entries", []) if e.get("member_id") == member_id]}
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})
@@ -234,6 +236,7 @@ async def ws_member_delete(hass, connection, msg):
     vol.Required("priority"): vol.In(["normal", "high", "low"]),
     vol.Required("assignees"): [str],
     vol.Optional("repeat", default="none"): vol.In(_TASK_REPEATS),
+    vol.Optional("points", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
 })
 @websocket_api.async_response
 async def ws_task_save(hass, connection, msg):
@@ -263,7 +266,7 @@ async def ws_task_save(hass, connection, msg):
         if msg["task_id"] and task is None:
             connection.send_error(msg["id"], "not_found", "Aufgabe nicht gefunden")
             return
-        fields = {"title": title, "description": description, "due": due, "priority": msg["priority"], "assignees": assignees, "repeat": msg["repeat"], "repeat_anchor": due if msg["repeat"] != "none" else ""}
+        fields = {"title": title, "description": description, "due": due, "priority": msg["priority"], "assignees": assignees, "repeat": msg["repeat"], "repeat_anchor": due if msg["repeat"] != "none" else "", "points": msg["points"]}
         if task:
             task.update(fields)
         else:
@@ -298,12 +301,25 @@ async def ws_task_toggle(hass, connection, msg):
                 tasks.remove(successor)
                 task["repeat"] = task.pop("completed_repeat", "none")
                 task.pop("next_task_id", None)
+            # Keep the points ledger consistent when a checkmark is reversed.
+            awards = [e for e in hub["state"]["point_entries"] if e.get("task_id") == task["id"] and e.get("kind") == "earned"]
+            for award in awards:
+                balance = sum(e["amount"] for e in hub["state"]["point_entries"] if e["member_id"] == award["member_id"])
+                if balance < award["amount"]:
+                    connection.send_error(msg["id"], "invalid_data", "Punkte wurden bereits für eine Belohnung eingelöst. Bitte zuerst mit den Eltern klären.")
+                    return
+            hub["state"]["point_entries"] = [e for e in hub["state"]["point_entries"] if not (e.get("task_id") == task["id"] and e.get("kind") == "earned")]
             task["done"] = False
         else:
             task["done"] = True
+            if task.get("points", 0) > 0:
+                for member in task.get("assignees", []):
+                    hub["state"]["point_entries"].append({"id": uuid4().hex, "kind": "earned", "task_id": task["id"],
+                        "member_id": member, "amount": task["points"], "label": task["title"],
+                        "at": dt_util.now().isoformat()})
             kind = task.get("repeat", "none")
             if kind != "none":
-                next_task = {k: task[k] for k in ("title", "description", "priority", "assignees", "repeat")}
+                next_task = {k: task[k] for k in ("title", "description", "priority", "assignees", "repeat", "points")}
                 next_task["assignees"] = list(next_task["assignees"])
                 next_task["repeat_anchor"] = task.get("repeat_anchor") or task["due"]
                 next_task["due"] = _next_task_due(task, dt_util.now().date())
@@ -331,6 +347,80 @@ async def ws_task_delete(hass, connection, msg):
         connection.send_result(msg["id"], hub["state"])
 
 
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/reward_save",
+    vol.Optional("reward_id", default=""): str,
+    vol.Required("title"): str,
+    vol.Required("cost"): vol.All(vol.Coerce(int), vol.Range(min=1, max=10000)),
+})
+@websocket_api.async_response
+async def ws_reward_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern können Belohnungen ändern")
+        return
+    try:
+        title = _text(msg["title"], 90)
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        rewards = hub["state"]["rewards"]
+        existing = next((r for r in rewards if r["id"] == msg["reward_id"]), None)
+        if msg["reward_id"] and existing is None:
+            connection.send_error(msg["id"], "not_found", "Belohnung nicht gefunden")
+            return
+        if existing:
+            existing.update({"title": title, "cost": msg["cost"]})
+        else:
+            rewards.append({"id": uuid4().hex, "title": title, "cost": msg["cost"]})
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/reward_delete",
+    vol.Required("reward_id"): str,
+})
+@websocket_api.async_response
+async def ws_reward_delete(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Keine Berechtigung")
+        return
+    async with hub["lock"]:
+        hub["state"]["rewards"] = [r for r in hub["state"]["rewards"] if r["id"] != msg["reward_id"]]
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/reward_redeem",
+    vol.Required("reward_id"): str,
+    vol.Required("member_id"): str,
+})
+@websocket_api.async_response
+async def ws_reward_redeem(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern können Punkte einlösen")
+        return
+    async with hub["lock"]:
+        reward = next((r for r in hub["state"]["rewards"] if r["id"] == msg["reward_id"]), None)
+        member = next((m for m in hub["state"]["members"] if m["id"] == msg["member_id"]), None)
+        if not reward or not member:
+            connection.send_error(msg["id"], "not_found", "Person oder Belohnung nicht gefunden")
+            return
+        balance = sum(e["amount"] for e in hub["state"]["point_entries"] if e["member_id"] == member["id"])
+        if balance < reward["cost"]:
+            connection.send_error(msg["id"], "invalid_data", "Noch nicht genügend Punkte gesammelt")
+            return
+        hub["state"]["point_entries"].append({"id": uuid4().hex, "kind": "redeemed", "member_id": member["id"],
+            "amount": -reward["cost"], "label": reward["title"], "at": dt_util.now().isoformat()})
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
 def _event_time(value, all_day=False):
@@ -692,6 +782,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     for command in (
         ws_version, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
+        ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
         ws_child_accounts, ws_child_assign, ws_child_qr,
