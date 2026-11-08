@@ -122,7 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.12",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.13",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -797,7 +797,7 @@ async def _send_task_reminder(hass, force=False):
                 return {"sent": False, "reason": "already_sent"}
         pending = [task for task in state.get("tasks", []) if not task.get("done") and task.get("due")
                    and (task["due"] == today or (settings.get("include_overdue", True) and task["due"] < today))]
-        if not pending:
+        if not pending and not force:
             return {"sent": False, "reason": "no_tasks"}
         member_names = {member["id"]: member.get("name", "Familienmitglied") for member in state.get("members", [])}
         lines = []
@@ -807,8 +807,21 @@ async def _send_task_reminder(hass, force=False):
             lines.append(f"- **{tag}:** {task.get('title', 'Aufgabe')[:160]} ({assigned})")
         if len(pending) > 20:
             lines.append(f"- … und {len(pending)-20} weitere Aufgaben")
-        persistent_notification.async_create(hass, "\n".join(lines), title="Family Hub – Aufgabenerinnerung",
-                                             notification_id=f"{DOMAIN}_task_reminder")
+        if force:
+            # A genuine test notification is created even when no tasks are due.
+            # Keep it separate from the regular daily reminder.
+            if not lines:
+                lines = ["✅ Der Benachrichtigungstest war erfolgreich.",
+                         "Heute sind keine offenen Aufgaben fällig oder überfällig."]
+            else:
+                lines.insert(0, "✅ Der Benachrichtigungstest war erfolgreich.")
+            title = "Family Hub – Test-Erinnerung"
+            notification_id = f"{DOMAIN}_reminder_test"
+        else:
+            title = "Family Hub – Aufgabenerinnerung"
+            notification_id = f"{DOMAIN}_task_reminder"
+        persistent_notification.async_create(hass, "\n".join(lines), title=title,
+                                             notification_id=notification_id)
         if not force:
             state["reminder_last_sent"] = today
             await hub["store"].async_save(state)

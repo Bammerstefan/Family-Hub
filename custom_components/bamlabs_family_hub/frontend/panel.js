@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.12";
+const FAMILY_HUB_UI_VERSION = "0.3.13";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -513,7 +513,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const overdueRow=this.el("label","person-choice");overdueRow.append(overdue,this.el("span",null,"Überfällige Aufgaben einbeziehen"));remind.append(overdueRow);
     const buttons=this.el("div","actions");
     buttons.append(this.button("✓ Erinnerungseinstellungen speichern",()=>this.request("reminder_settings_save",{enabled:enabled.checked,hour:Number(hour.value),include_overdue:overdue.checked}),"btn"));
-    buttons.append(this.button("🔔 Test-Erinnerung",async()=>{try{const result=await this._hass.callWS({type:"bamlabs_family_hub/reminder_test"});this.error=result.sent?`Test-Erinnerung für ${result.count} offene Aufgaben im Home-Assistant-Benachrichtigungsbereich erstellt.`:"Keine heute fälligen oder überfälligen offenen Aufgaben zum Erinnern gefunden.";}catch(e){this.error=e.message||String(e);}this.render();},"btn secondary"));
+    buttons.append(this.button("🔔 Test-Erinnerung",async()=>{try{const result=await this._hass.callWS({type:"bamlabs_family_hub/reminder_test"});this.error=result.sent?`Test-Benachrichtigung wurde in Home Assistant erstellt (${result.count} fällige Aufgaben). Öffne Home Assistant → Benachrichtigungen (Glocke). Dies ist keine Handy-Push-Nachricht.`:"Test konnte keine Benachrichtigung erstellen.";}catch(e){this.error=e.message||String(e);}this.render();},"btn secondary"));
     remind.append(buttons);intro.append(remind);
     intro.append(this.el("h3",null,"📱 Kinder & Handy-Zugang"));
     intro.append(this.el("p","small","Jedes Kind bekommt einen persönlichen QR-Code. Der Code öffnet Family Hub auf dem Handy – ohne Passwort im QR-Code. Zur Anmeldung benötigt das Kind einmalig ein eigenes Home-Assistant-Konto ohne Administratorrechte."));
