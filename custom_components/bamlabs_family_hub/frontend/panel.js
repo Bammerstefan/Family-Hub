@@ -1,4 +1,5 @@
-/* BamLabs Family Hub 0.3.8 — no external libraries, local Home Assistant storage. */
+/* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
+const FAMILY_HUB_UI_VERSION = "0.3.9";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -180,14 +181,14 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const left=this.el("div");left.append(this.el("div","brand","🏡 BamLabs Family Hub"),this.el("div","small","Dein Familienalltag – gemeinsam organisiert"));
     const tools=this.el("div","actions");
     const versionText=this.backendVersion
-      ? `Oberfläche v0.3.7 · Backend v${this.backendVersion}`
-      : "Oberfläche v0.3.7";
+      ? `Oberfläche v${FAMILY_HUB_UI_VERSION} · Backend v${this.backendVersion}`
+      : `Oberfläche v${FAMILY_HUB_UI_VERSION}`;
     tools.append(this.el("span","small",versionText));
     const reload=this.button("🔄 Aktualisieren",()=>this.reloadHub(),"btn secondary");
     reload.title="Oberfläche neu laden. Neue Versionen über den Marketplace installieren.";
     tools.append(reload);
     header.append(left,tools);page.append(header);
-    if(this.backendVersion && this.backendVersion!=="0.3.7" && this.backendVersion!=="nicht abrufbar") {
+    if(this.backendVersion && this.backendVersion!==FAMILY_HUB_UI_VERSION && this.backendVersion!=="nicht abrufbar") {
       page.append(this.el("div","notice",`Oberfläche und Backend haben verschiedene Versionen (${versionText}). Bitte das Update im Marketplace installieren, Home Assistant neu starten und dann Aktualisieren drücken.`));
     }
     const nav=this.el("nav","nav");
