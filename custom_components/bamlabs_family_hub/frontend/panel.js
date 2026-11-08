@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.13";
+const FAMILY_HUB_UI_VERSION = "0.3.14";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -28,6 +28,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.qrFor = null;
     this.childForm = null;
     this.showCalendarSetup = false;
+    this.pushDevices = [];
+    this.pushDevicesLoaded = false;
     this.taskFilter = "";
     this.backendVersion = "";
   }
@@ -58,6 +60,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       this.checkVersion();
       if (this.data._role === "admin") {
         this.loadCalendarSources();
+        this.loadPushDevices();
         this.refreshExternalEvents();
       }
     } catch(e) { this.error = e.message || String(e); }
@@ -460,6 +463,18 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       this.qrFor={member:member.name,url:url.href,image:response.image};this.error="";this.render();
     }catch(e){this.error=e.message||String(e);this.render();}
   }
+  async loadPushDevices() {
+    if (!this._hass || this.data?._role !== "admin") return;
+    try {this.pushDevices = await this._hass.callWS({type:"bamlabs_family_hub/push_devices"});this.pushDevicesLoaded=true;this.render();}
+    catch(e) {this.pushDevicesLoaded=true;this.error=e.message||String(e);this.render();}
+  }
+  async testPush(memberId) {
+    try {
+      const result=await this._hass.callWS({type:"bamlabs_family_hub/push_test",member_id:memberId});
+      this.error=result.sent?"✅ Handy-Testnachricht wurde an den Home-Assistant-Benachrichtigungsdienst übergeben.":"Kein Push versendet: "+(result.errors||[]).join("; ");
+    } catch(e){this.error=e.message||String(e);}
+    this.render();
+  }
   renderSettings(page) {
     const intro=this.el("section","panel");
     intro.append(this.cardTitle("⚙️ Einstellungen"));
@@ -515,6 +530,31 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     buttons.append(this.button("✓ Erinnerungseinstellungen speichern",()=>this.request("reminder_settings_save",{enabled:enabled.checked,hour:Number(hour.value),include_overdue:overdue.checked}),"btn"));
     buttons.append(this.button("🔔 Test-Erinnerung",async()=>{try{const result=await this._hass.callWS({type:"bamlabs_family_hub/reminder_test"});this.error=result.sent?`Test-Benachrichtigung wurde in Home Assistant erstellt (${result.count} fällige Aufgaben). Öffne Home Assistant → Benachrichtigungen (Glocke). Dies ist keine Handy-Push-Nachricht.`:"Test konnte keine Benachrichtigung erstellen.";}catch(e){this.error=e.message||String(e);}this.render();},"btn secondary"));
     remind.append(buttons);intro.append(remind);
+    const push=this.el("section","panel");
+    push.append(this.el("h3",null,"📲 Erinnerungen aufs Handy"));
+    push.append(this.el("p","small","Nur mit der offiziellen Home-Assistant-Handy-App. Jeder Person ein Handy zuordnen; dann werden ausschließlich ihre eigenen fälligen Aufgaben geschickt. Standardmäßig ausgeschaltet. Uhrzeit und überfällige Aufgaben werden aus den Erinnerungs-Einstellungen oben übernommen."));
+    const ps=this.data.push_settings||{enabled:false,devices:{}};
+    const pushEnabled=this.el("input");pushEnabled.type="checkbox";pushEnabled.checked=!!ps.enabled;
+    const enableRow=this.el("label","person-choice");enableRow.append(pushEnabled,this.el("span",null,"Tägliche Handy-Erinnerungen aktivieren"));push.append(enableRow);
+    if(!this.pushDevicesLoaded)push.append(this.el("p","small","Handy-Liste wird geladen …"));
+    if(this.pushDevicesLoaded && !this.pushDevices.length)push.append(this.el("p","notice","Noch kein Handy gefunden. Installiere und verbinde die Home-Assistant-App auf dem jeweiligen Handy und erlaube Benachrichtigungen. Anschließend hier neu laden."));
+    const deviceInputs={};
+    for(const m of this.data.members){
+      const field=this.el("label","field");field.append(this.el("span","field-title",`Handy für ${m.name}`));
+      const sel=this.el("select");const none=this.el("option",null,"Kein Handy ausgewählt");none.value="";sel.append(none);
+      for(const dev of this.pushDevices){const opt=this.el("option",null,dev.name);opt.value=dev.id;sel.append(opt);}
+      const configured=(ps.devices||{})[m.id]||"";
+      if(configured && !this.pushDevices.some(d=>d.id===configured)){
+        const missing=this.el("option",null,`Nicht mehr verfügbar: ${configured}`);missing.value=configured;sel.append(missing);
+      }
+      sel.value=configured;deviceInputs[m.id]=sel;field.append(sel);
+      const line=this.el("div","actions");line.append(field,this.button("🔔 Test ans Handy",()=>this.testPush(m.id),"btn secondary"));push.append(line);
+    }
+    const pushActions=this.el("div","actions");
+    pushActions.append(this.button("✓ Handy-Zuordnung speichern",()=>this.request("push_settings_save",{enabled:pushEnabled.checked,devices:Object.fromEntries(Object.entries(deviceInputs).map(([k,v])=>[k,v.value]))}),"btn"));
+    pushActions.append(this.button("🔄 Handys suchen",()=>this.loadPushDevices(),"btn secondary"));
+    push.append(pushActions);intro.append(push);
+
     intro.append(this.el("h3",null,"📱 Kinder & Handy-Zugang"));
     intro.append(this.el("p","small","Jedes Kind bekommt einen persönlichen QR-Code. Der Code öffnet Family Hub auf dem Handy – ohne Passwort im QR-Code. Zur Anmeldung benötigt das Kind einmalig ein eigenes Home-Assistant-Konto ohne Administratorrechte."));
     intro.append(this.el("p","small","1. Unter Einstellungen → Personen → Benutzer ein eigenes normales Benutzerkonto für jedes Kind anlegen. 2. Hier das Konto mit dem Kind verbinden. 3. QR-Code mit dem Handy scannen und beim ersten Aufruf anmelden. Danach sieht das Kind nur seine zugewiesenen Aufgaben und Termine."));

@@ -91,7 +91,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", "")}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {})}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock})
@@ -105,6 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hub_data.get("reminder_unsubscribe"):
         async def _reminder_tick(now):
             await _send_task_reminder(hass, force=False)
+            await _send_mobile_reminders(hass)
         def _schedule_tick(now):
             hass.async_create_task(_reminder_tick(now))
         hub_data["reminder_unsubscribe"] = async_track_time_change(
@@ -122,7 +123,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.13",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.14",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -856,6 +857,117 @@ async def ws_reminder_test(hass, connection, msg):
     connection.send_result(msg["id"], result)
 
 
+def _mobile_services(hass):
+    """Only official companion-app notify services, never arbitrary HA services."""
+    return sorted(name for name in hass.services.async_services().get("notify", {})
+                  if name.startswith("mobile_app_"))
+
+
+async def _send_mobile_reminders(hass, *, test_member=None):
+    """Send a daily private digest to the configured mobile device for each member."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or "state" not in hub:
+        return {"sent": 0, "reason": "not_ready"}
+    available = set(_mobile_services(hass))
+    now = dt_util.now()
+    today = now.date().isoformat()
+    async with hub["lock"]:
+        state = hub["state"]
+        settings = state.get("push_settings", {})
+        if test_member is None and not settings.get("enabled", False):
+            return {"sent": 0, "reason": "disabled"}
+        reminder = state.get("reminder_settings", {})
+        if test_member is None and now.hour != int(reminder.get("hour", 8)):
+            return {"sent": 0, "reason": "not_due"}
+        devices = dict(settings.get("devices", {}))
+        last = dict(state.get("push_last_sent", {}))
+        members = list(state.get("members", []))
+        tasks = list(state.get("tasks", []))
+        include_overdue = reminder.get("include_overdue", True)
+    sent = 0
+    errors = []
+    for member in members:
+        mid = member["id"]
+        if test_member is not None and mid != test_member:
+            continue
+        service = devices.get(mid, "")
+        if not service or service not in available:
+            if test_member == mid:
+                errors.append("Kein verfügbares Handy für dieses Familienmitglied ausgewählt")
+            continue
+        if test_member is None and last.get(mid) == today:
+            continue
+        pending = [task for task in tasks if not task.get("done") and mid in task.get("assignees", [])
+                   and task.get("due") and (task["due"] == today or (include_overdue and task["due"] < today))]
+        if not pending and test_member is None:
+            continue
+        if test_member is not None:
+            message = f"Hallo {member['name']}! ✅ Die Handy-Testnachricht vom Family Hub funktioniert."
+        else:
+            names = [t.get("title", "Aufgabe")[:70] for t in sorted(pending, key=lambda t: t["due"])[:5]]
+            message = f"Hallo {member['name']}! Du hast {len(pending)} offene Aufgaben für heute oder früher: " + "; ".join(names)
+            if len(pending) > 5:
+                message += f" (+{len(pending)-5} weitere)"
+        try:
+            await hass.services.async_call("notify", service,
+                {"title": "BamLabs Family Hub", "message": message}, blocking=True)
+        except Exception as err:
+            errors.append(f"{member['name']}: {err}")
+            continue
+        sent += 1
+        if test_member is None:
+            async with hub["lock"]:
+                hub["state"].setdefault("push_last_sent", {})[mid] = today
+                await hub["store"].async_save(hub["state"])
+    return {"sent": sent, "errors": errors[:5]}
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/push_devices"})
+@websocket_api.async_response
+async def ws_push_devices(hass, connection, msg):
+    if not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    connection.send_result(msg["id"], [{"id": s, "name": s.removeprefix("mobile_app_").replace("_", " ")} for s in _mobile_services(hass)])
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/push_settings_save",
+    vol.Required("enabled"): bool,
+    vol.Required("devices"): dict,
+})
+@websocket_api.async_response
+async def ws_push_settings_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    available = set(_mobile_services(hass))
+    async with hub["lock"]:
+        members = {m["id"] for m in hub["state"]["members"]}
+        incoming = msg["devices"]
+        if len(incoming) > 50 or any(not isinstance(k, str) or k not in members or
+                not isinstance(v, str) or (v and v not in available) for k, v in incoming.items()):
+            connection.send_error(msg["id"], "invalid_devices", "Ungültige Handyzuordnung")
+            return
+        hub["state"]["push_settings"] = {"enabled": msg["enabled"], "devices": {k: v for k, v in incoming.items() if v}}
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/push_test", vol.Required("member_id"): str})
+@websocket_api.async_response
+async def ws_push_test(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    if msg["member_id"] not in {m["id"] for m in hub["state"]["members"]}:
+        connection.send_error(msg["id"], "not_found", "Familienmitglied nicht gefunden")
+        return
+    connection.send_result(msg["id"], await _send_mobile_reminders(hass, test_member=msg["member_id"]))
+
+
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/version"})
 @websocket_api.async_response
 async def ws_version(hass, connection, msg):
@@ -871,7 +983,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_version, ws_reminder_settings_save, ws_reminder_test, ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
