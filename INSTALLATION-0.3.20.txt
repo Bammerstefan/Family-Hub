@@ -1,0 +1,13 @@
+BamLabs Family Hub v0.3.20
+============================
+1. Home Assistant vollständig sichern.
+2. Die ZIP-Datei entpacken.
+3. Aus custom_components den Ordner bamlabs_family_hub nach
+   /config/custom_components/ kopieren und die bestehenden Dateien ersetzen.
+4. Home Assistant vollständig neu starten.
+5. Family Hub neu laden. Oberfläche und Backend sollten v0.3.20 anzeigen.
+6. Eltern: Menü „🌈 Routinen“ -> Neuen Tagesablauf erstellen.
+7. Kinder: „🌈 Mein Tag“ antippen und Schritte abhaken.
+
+Hinweis: Routinen haben je Familienmitglied und Datum eigene Häkchen.
+Routinen vergeben noch keine Punkte; normale Aufgaben bleiben unverändert.

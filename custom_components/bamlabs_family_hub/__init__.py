@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock})
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.19",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.20",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -190,7 +190,9 @@ def _visible_state(hub, connection):
             "events": [e for e in state["events"] if member_id in e.get("members", [])],
             "external_calendars": [], "calendar_members": {},
             "rewards": state.get("rewards", []),
-            "point_entries": [e for e in state.get("point_entries", []) if e.get("member_id") == member_id]}
+            "point_entries": [e for e in state.get("point_entries", []) if e.get("member_id") == member_id],
+            "routines": [r for r in state.get("routines", []) if member_id in r.get("member_ids", [])],
+            "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id]}
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})
@@ -262,6 +264,9 @@ async def ws_member_delete(hass, connection, msg):
         for event in hub["state"]["events"]:
             event["members"] = [i for i in event.get("members", []) if i != msg["member_id"]]
         hub["state"]["calendar_members"] = {k: v for k, v in hub["state"].get("calendar_members", {}).items() if v != msg["member_id"]}
+        for routine in hub["state"].get("routines", []):
+            routine["member_ids"] = [mid for mid in routine.get("member_ids", []) if mid != msg["member_id"]]
+        hub["state"]["routine_checks"] = [c for c in hub["state"].get("routine_checks", []) if c.get("member_id") != msg["member_id"]]
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
@@ -276,6 +281,7 @@ async def ws_member_delete(hass, connection, msg):
     vol.Required("assignees"): [str],
     vol.Optional("repeat", default="none"): vol.In(_TASK_REPEATS),
     vol.Optional("points", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
+    vol.Optional("icon", default="✅"): str,
 })
 @websocket_api.async_response
 async def ws_task_save(hass, connection, msg):
@@ -286,6 +292,7 @@ async def ws_task_save(hass, connection, msg):
     try:
         title = _text(msg["title"], 160)
         description = msg["description"].strip()[:1500]
+        icon = _routine_icon(msg.get("icon", "✅"))
         due = _optional_date(msg["due"])
         if msg["repeat"] != "none" and not due:
             raise ValueError("Wiederkehrende Aufgaben benötigen ein Fälligkeitsdatum")
@@ -305,7 +312,7 @@ async def ws_task_save(hass, connection, msg):
         if msg["task_id"] and task is None:
             connection.send_error(msg["id"], "not_found", "Aufgabe nicht gefunden")
             return
-        fields = {"title": title, "description": description, "due": due, "priority": msg["priority"], "assignees": assignees, "repeat": msg["repeat"], "repeat_anchor": due if msg["repeat"] != "none" else "", "points": msg["points"]}
+        fields = {"title": title, "description": description, "due": due, "priority": msg["priority"], "assignees": assignees, "repeat": msg["repeat"], "repeat_anchor": due if msg["repeat"] != "none" else "", "points": msg["points"], "icon": icon}
         if task:
             old_done = _done_members(task)
             task.update(fields)
@@ -389,6 +396,7 @@ async def ws_task_toggle(hass, connection, msg):
                 if kind != "none" and not task.get("next_task_id"):
                     next_task = {k: task[k] for k in ("title", "description", "priority", "assignees", "repeat", "points")}
                     next_task["assignees"] = list(next_task["assignees"])
+                    next_task["icon"] = task.get("icon", "✅")
                     next_task["repeat_anchor"] = task.get("repeat_anchor") or task["due"]
                     next_task["due"] = _next_task_due(task, dt_util.now().date())
                     next_task["id"] = uuid4().hex
@@ -1126,6 +1134,135 @@ async def ws_version(hass, connection, msg):
     connection.send_result(msg["id"], {"backend_version": integration.version})
 
 
+
+# Routines are independent from task rewards: completing a routine never credits points.
+_ROUTINE_ICONS = {"🌞", "🌙", "🪥", "👕", "🥣", "🎒", "🛏️", "🧸", "📚", "🧼", "🍽️", "🐶", "⭐", "💧", "🧹", "🚿", "🚲", "🎨", "🌈", "✅", "🏠", "🎵"}
+
+
+def _routine_icon(value):
+    if value not in _ROUTINE_ICONS:
+        raise ValueError("Bitte ein Symbol aus der Liste wählen")
+    return value
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/routine_save",
+    vol.Optional("routine_id", default=""): str,
+    vol.Required("title"): str,
+    vol.Required("icon"): str,
+    vol.Required("days"): [vol.All(vol.Coerce(int), vol.Range(min=0, max=6))],
+    vol.Required("member_ids"): [str],
+    vol.Required("steps"): [dict],
+})
+@websocket_api.async_response
+async def ws_routine_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern können Routinen bearbeiten")
+        return
+    try:
+        title = _text(msg["title"], 70)
+        icon = _routine_icon(msg["icon"])
+        days = sorted(set(msg["days"]))
+        people = list(dict.fromkeys(msg["member_ids"]))
+        if not days or not people or len(people) > 30:
+            raise ValueError("Mindestens einen Wochentag und eine Person wählen")
+        steps = []
+        if not 1 <= len(msg["steps"]) <= 12:
+            raise ValueError("Bitte 1 bis 12 Schritte anlegen")
+        for raw in msg["steps"]:
+            if not isinstance(raw, dict):
+                raise ValueError("Ungültiger Schritt")
+            steps.append({"id": str(raw.get("id") or uuid4().hex)[:40],
+                          "title": _text(raw.get("title", ""), 65),
+                          "icon": _routine_icon(raw.get("icon", "✅"))})
+        if len({v["id"] for v in steps}) != len(steps):
+            raise ValueError("Doppelte Schrittkennungen")
+    except (ValueError, TypeError) as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        existing_members = {m["id"] for m in state["members"]}
+        if any(mid not in existing_members for mid in people):
+            connection.send_error(msg["id"], "invalid_data", "Unbekanntes Familienmitglied")
+            return
+        routines = state["routines"]
+        item = next((r for r in routines if r["id"] == msg["routine_id"]), None) if msg["routine_id"] else None
+        if msg["routine_id"] and item is None:
+            connection.send_error(msg["id"], "not_found", "Routine nicht gefunden")
+            return
+        payload = {"title": title, "icon": icon, "days": days, "member_ids": people, "steps": steps}
+        if item:
+            item.update(payload)
+            # Retain valid check marks for unchanged steps/people.
+            valid_steps = {step["id"] for step in steps}
+            state["routine_checks"] = [c for c in state["routine_checks"] if c["routine_id"] != item["id"] or
+                                        (c["member_id"] in people and c["step_id"] in valid_steps)]
+        else:
+            routines.append({"id": uuid4().hex, **payload})
+        await hub["store"].async_save(state)
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/routine_delete", vol.Required("routine_id"): str})
+@websocket_api.async_response
+async def ws_routine_delete(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        if not any(r["id"] == msg["routine_id"] for r in state["routines"]):
+            connection.send_error(msg["id"], "not_found", "Routine nicht gefunden")
+            return
+        state["routines"] = [r for r in state["routines"] if r["id"] != msg["routine_id"]]
+        state["routine_checks"] = [c for c in state["routine_checks"] if c["routine_id"] != msg["routine_id"]]
+        await hub["store"].async_save(state)
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/routine_toggle",
+    vol.Required("routine_id"): str,
+    vol.Required("step_id"): str,
+    vol.Optional("member_id", default=""): str,
+})
+@websocket_api.async_response
+async def ws_routine_toggle(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub:
+        connection.send_error(msg["id"], "not_ready", "Family Hub nicht bereit")
+        return
+    is_admin = _owner(connection)
+    child_id = _child_member(hub, connection) if not is_admin else None
+    if not is_admin and not child_id:
+        connection.send_error(msg["id"], "unauthorized", "Kein Zugriff")
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        routine = next((r for r in state["routines"] if r["id"] == msg["routine_id"]), None)
+        mid = msg["member_id"] if is_admin else child_id
+        if not routine or mid not in routine["member_ids"] or msg["step_id"] not in {s["id"] for s in routine["steps"]}:
+            connection.send_error(msg["id"], "invalid_data", "Schritt oder Person nicht zugeordnet")
+            return
+        today = dt_util.now().date()
+        if today.weekday() not in routine["days"]:
+            connection.send_error(msg["id"], "invalid_data", "Diese Routine ist heute nicht geplant")
+            return
+        key = (routine["id"], mid, msg["step_id"], today.isoformat())
+        logs = state["routine_checks"]
+        found = next((c for c in logs if (c["routine_id"],c["member_id"],c["step_id"],c["date"]) == key), None)
+        if found:
+            logs.remove(found)
+        else:
+            logs.append({"routine_id": key[0], "member_id": key[1], "step_id": key[2], "date": key[3]})
+        cutoff = (today - timedelta(days=90)).isoformat()
+        state["routine_checks"] = [c for c in logs if c.get("date", "") >= cutoff]
+        await hub["store"].async_save(state)
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
@@ -1134,6 +1271,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     for command in (
         ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
+        ws_routine_save, ws_routine_delete, ws_routine_toggle,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
