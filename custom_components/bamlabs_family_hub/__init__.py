@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30})}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}})
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.30",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.31",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -191,7 +191,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "rewards": [], "routine_checks": [], "school_plan": [], "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -203,6 +203,7 @@ def _visible_state(hub, connection):
             "external_calendars": [], "calendar_members": {},
             "rewards": state.get("rewards", []),
             "point_entries": [e for e in state.get("point_entries", []) if e.get("member_id") == member_id],
+            "task_completions": [e for e in state.get("task_completions", []) if e.get("member_id") == member_id],
             "routines": [r for r in state.get("routines", []) if member_id in r.get("member_ids", [])],
             "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id],
             "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id],
@@ -493,6 +494,8 @@ async def ws_task_toggle(hass, connection, msg):
                     return
             remove_ids = {e["id"] for e in awards}
             hub["state"]["point_entries"] = [e for e in hub["state"]["point_entries"] if e["id"] not in remove_ids]
+            hub["state"]["task_completions"] = [e for e in hub["state"].get("task_completions", [])
+                if not (e.get("task_id") == task["id"] and e.get("member_id") == member_id)]
             if assignees:
                 task["done_members"] = [mid for mid in assignees if mid in _done_members(task) and mid != member_id]
             else:
@@ -502,6 +505,15 @@ async def ws_task_toggle(hass, connection, msg):
                 task["repeat"] = task.pop("completed_repeat", "none")
                 task.pop("next_task_id", None)
         else:
+            if assignees and not any(e.get("task_id") == task["id"] and e.get("member_id") == member_id
+                                     for e in hub["state"].get("task_completions", [])):
+                now = dt_util.now()
+                cutoff = (now.date() - timedelta(days=180)).isoformat()
+                history = hub["state"].setdefault("task_completions", [])
+                history.append({"task_id": task["id"], "member_id": member_id,
+                                "date": now.date().isoformat(), "at": now.isoformat(),
+                                "title": task.get("title", "Aufgabe")[:160]})
+                hub["state"]["task_completions"] = [e for e in history if e.get("date", "") >= cutoff]
             if assignees:
                 task["done_members"] = [mid for mid in assignees if mid in (_done_members(task) | {member_id})]
             else:
