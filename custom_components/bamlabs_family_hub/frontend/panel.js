@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.18";
+const FAMILY_HUB_UI_VERSION = "0.3.19";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -32,6 +32,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.pushDevicesLoaded = false;
     this.taskFilter = "";
     this.backendVersion = "";
+    this.savedNotice = "";
   }
   connectedCallback() {
     // Refresh visible calendar data regularly while this panel is mounted.
@@ -88,10 +89,12 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
+      const saveLabels={calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",event_save:"Termin",reward_save:"Belohnung"};
+      this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       this.editMember = null;
       this.editTask = null;
       this.editEvent = null;
-    } catch(e) { this.error = e.message || String(e); }
+    } catch(e) { this.error = e.message || String(e); this.savedNotice = ""; }
     finally { this.busy = false; this.render(); }
   }
   async loadCalendarSources() {
@@ -105,6 +108,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:"bamlabs_family_hub/calendar_select", entity_ids:ids});
       this.externalEvents = []; this.externalRange = ""; this.externalLastSync = null; this.externalError = "";
+      this.savedNotice = "✅ Kalenderauswahl erfolgreich gespeichert.";
     } catch(e) { this.externalError = e.message || String(e); }
     finally { this.externalBusy = false; this.render(); this.refreshExternalEvents(); }
   }
@@ -112,9 +116,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if (!this._hass || this.externalBusy) return;
     this.externalBusy = true;
     try {
-      this.data = await this._hass.callWS({type:"bamlabs_family_hub/calendar_member_assign", entity_id:entityId, member_id:memberId,device:device||""});
+      this.data = await this._hass.callWS({type:"bamlabs_family_hub/calendar_member_assign", entity_id:entityId, member_id:memberId});
       this.externalError = "";
-    } catch(e) {this.externalError = e.message || String(e);}
+      this.savedNotice = "✅ Kalenderzuordnung erfolgreich gespeichert.";
+    } catch(e) {this.externalError = e.message || String(e); this.savedNotice = "";}
     finally {this.externalBusy = false; this.render();}
   }
   calendarMemberPicker(src) {
@@ -157,6 +162,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     return node;
   }
   memberName(id) { return this.data.members.find(m=>m.id===id)?.name || "Unbekannt"; }
+  completedFor(task, mid) {return (task.done_members || (task.done ? task.assignees || [] : [])).includes(mid);}
+  completedForAll(task) {return (task.assignees || []).length ? task.assignees.every(mid=>this.completedFor(task,mid)) : !!task.done;}
+  setTaskMember(taskId, memberId) {return this.request("task_toggle",{task_id:taskId,member_id:memberId});}
+
   dateLabel(value) { if (!value) return "Ohne Fälligkeit"; const [y,m,d]=value.split("-"); return `${d}.${m}.${y}`; }
   button(text, action, cls="btn") {
     const b=this.el("button", cls, text); b.type="button"; b.disabled=this.busy; b.addEventListener("click",action);return b;
@@ -176,7 +185,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       :host {display:block;min-height:100%;font-family:var(--primary-font-family,system-ui,-apple-system,sans-serif);color:var(--primary-text-color,#192238);background:var(--primary-background-color,#f5f7fb)}
       *,*:before,*:after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}
       .page{max-width:1120px;margin:0 auto;padding:24px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:25px;font-weight:800;letter-spacing:-.6px}.small{font-size:13px;color:var(--secondary-text-color,#697386)}.nav{display:flex;gap:9px;overflow:auto;margin:23px 0}.tab{border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);padding:11px 16px;border-radius:12px;color:inherit;white-space:nowrap;font-weight:650}.tab.selected{background:#1464db;color:white;border-color:#1464db}
-      .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
+      .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.save-success{padding:14px 17px;border-radius:12px;background:#e4f7e9;color:#195c31;font-weight:750;margin:0 0 15px;border:1px solid #a5dfb6}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
       .week-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:9px}.week-column{border:1px solid var(--divider-color,#dfe5ee);border-radius:12px;padding:10px;min-width:0}.week-column.today{border-color:var(--primary-color,#1464db);border-width:2px}.week-card{padding:8px;margin-top:9px;background:var(--secondary-background-color,#eef1f6);border-radius:9px;border-left:4px solid #1464db;overflow-wrap:anywhere;font-size:13px}.week-card .check{width:18px;height:18px}.week-check{display:flex;gap:8px;align-items:flex-start}.week-meta{font-size:11px;opacity:.8;margin-top:4px}.week-summary{margin:10px 0 18px}.week-column h3{font-size:14px;margin:0 0 7px}.week-column .small{font-size:11px} .progress-person{border-top:1px solid var(--divider-color,#dfe5ee);padding:14px 0;display:grid;gap:8px}.progress-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}.progress-track{height:12px;background:var(--secondary-background-color,#eef1f6);border-radius:999px;overflow:hidden}.progress-fill{height:100%;border-radius:999px;transition:width .2s}.progress-person .btn{justify-self:start} 
       .child-welcome{margin-bottom:16px}.child-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}.child-stat{display:grid;gap:4px;align-content:center;border-radius:13px;background:var(--secondary-background-color,#eef1f6);padding:12px;text-align:center}.child-stat-number{font-size:24px;font-weight:800}.child-task{min-height:62px;cursor:pointer}.child-task .check{width:28px;height:28px;flex-shrink:0}.child-action{min-height:48px;margin-top:12px}
       .hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}.hero-card{padding:18px;border-radius:18px;background:linear-gradient(180deg,#ffffff,#f7faff);border:1px solid var(--divider-color,#dfe5ee);box-shadow:0 2px 10px #00000006}.hero-icon{font-size:28px}.hero-value{font-size:30px;font-weight:800;margin-top:6px}.hero-label{font-size:14px;color:var(--secondary-text-color,#697386);margin-top:4px}.big-link-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0 20px}.big-link{display:grid;gap:6px;align-content:start;text-align:left;padding:18px;border-radius:18px;border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff)}.big-link-icon{font-size:28px}.big-link-title{font-weight:800;font-size:18px}.big-link small{font-size:13px;color:var(--secondary-text-color,#697386)}.member-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.member-card{border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;padding:16px;background:var(--card-background-color,#fff);display:grid;gap:10px}.member-head{display:flex;align-items:center;gap:12px}.member-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:19px;flex-shrink:0}.member-name{font-size:18px;font-weight:800}.member-task-count{font-size:14px;color:var(--secondary-text-color,#697386)}.member-badges{display:flex;gap:8px;flex-wrap:wrap}.member-badge{padding:6px 10px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:13px;font-weight:700}.section-note{margin-top:-8px;margin-bottom:16px}.focus-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.kid-hero{background:linear-gradient(135deg,#fff6cc,#ffe8f0 50%,#ecf6ff);border:1px solid #f2df9d}.kid-big-title{font-size:28px;font-weight:900;line-height:1.1}.kid-sub{font-size:15px;color:#4d5b73}.kid-quick-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}.child-big-btn{display:grid;gap:6px;justify-items:center;align-content:center;text-align:center;min-height:92px;padding:14px;border-radius:18px;border:0;background:#ffffff}.child-big-btn span:first-child{font-size:30px}.child-big-btn strong{font-size:18px}.kid-section-title{font-size:24px;font-weight:900;margin:0 0 8px}.kid-section-note{font-size:14px;color:var(--secondary-text-color,#697386);margin-bottom:12px}.kid-stack{display:grid;gap:12px}.kid-empty{padding:18px;border-radius:16px;background:#fff9e8;border:1px dashed #e6d28b;font-weight:700}.mini-note{font-size:12px;color:var(--secondary-text-color,#697386)}
@@ -204,6 +213,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     tabs.forEach(([id,label])=>{
       nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if((id==="calendar"||id==="week")&&!child)this.refreshExternalEvents();},`tab ${this.tab===id?"selected":""}`));
     });page.append(nav);
+    if(this.savedNotice) page.append(this.el("div","save-success",this.savedNotice));
     if(this.error) page.append(this.el("div","notice",`Hinweis: ${this.error}`));
     if(!this.loaded) {page.append(this.el("div","panel",this.busy?"Daten werden geladen …":"Keine Verbindung zu Family Hub. Bitte Integration prüfen."));root.append(page);return;}
     if(child){
@@ -256,11 +266,20 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const tasks=allTasks.filter(t=>t.due===iso);
       for(const task of tasks) {
         const card=this.el("div","week-card");
-        const row=this.el("label","week-check");
-        const cb=this.el("input","check");cb.type="checkbox";cb.checked=false;cb.disabled=this.busy;
-        cb.setAttribute("aria-label",`${task.title} erledigen`);
-        cb.addEventListener("change",()=>this.request("task_toggle",{task_id:task.id}));
-        const title=this.el("span",null,task.title);row.append(cb,title);card.append(row);
+        const row=this.el("div","week-check");
+        row.append(this.el("span",null,task.title));card.append(row);
+        if(task.assignees?.length>1){
+          task.assignees.forEach(mid=>{
+            if(this.weekMemberFilter && this.weekMemberFilter!==mid)return;
+            const cb=this.el("input","check");cb.type="checkbox";cb.checked=this.completedFor(task,mid);cb.disabled=this.busy;
+            cb.addEventListener("change",()=>this.setTaskMember(task.id,mid));
+            const label=this.el("label","person-choice");label.append(cb,this.el("span",null,this.memberName(mid)));card.append(label);
+          });
+        }else{
+          const cb=this.el("input","check");cb.type="checkbox";cb.checked=!!task.done;cb.disabled=this.busy;
+          cb.addEventListener("change",()=>this.setTaskMember(task.id,task.assignees?.[0]||""));
+          row.prepend(cb);
+        }
         const assigned=(task.assignees||[]).map(id=>this.memberName(id)).join(", ");
         if(assigned)card.append(this.el("div","week-meta",assigned));
         if(task.points)card.append(this.el("div","week-meta",`⭐ ${task.points} Punkte`));
@@ -292,7 +311,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.refreshExternalEvents();
   }
   renderToday(page) {
-    const pending=this.data.tasks.filter(t=>!t.done);
+    const pending=this.data.tasks.filter(t=>!this.completedForAll(t));
     const today=new Date();
     const localDate=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
     const due=pending.filter(t=>t.due && t.due<=localDate);
@@ -306,37 +325,19 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     });
     page.append(stats);
 
-    const quick=this.el("section","panel");
-    quick.append(this.cardTitle("🌟 Schnell starten"));
-    quick.append(this.el("p","small section-note","Große Bereiche für den Familienalltag – einfach antippen und loslegen."));
-    const quickGrid=this.el("div","big-link-grid");
-    const shortcuts=[
-      ["✅","Aufgaben","Offene Aufgaben ansehen und abhaken",()=>{this.tab="tasks";this.render();}],
-      ["📅","Kalender","Termine für heute und die Woche",()=>{this.tab="calendar";this.render();this.refreshExternalEvents();}],
-      ["🗓️","Woche","Den Wochenplan der Familie öffnen",()=>{this.tab="week";this.render();this.refreshExternalEvents();}],
-      ["⚙️","Einstellungen","Kalender, Kinderzugang und Handys",()=>{this.tab="settings";this.render();}]
-    ];
-    shortcuts.forEach(([icon,title,desc,action])=>{
-      const btn=this.button("",action,"big-link");
-      btn.append(this.el("span","big-link-icon",icon),this.el("span","big-link-title",title));
-      const small=this.el("small",null,desc);btn.append(small);quickGrid.append(btn);
-    });
-    quick.append(quickGrid);
-    page.append(quick);
-
     const progress=this.el("section","panel");
     progress.append(this.cardTitle("🧒 Wer hat noch etwas zu tun?"));
     progress.append(this.el("p","small section-note","Es werden nur Familienmitglieder mit offenen Aufgaben angezeigt."));
     if(!this.data.members.length)progress.append(this.el("div","empty","Lege zuerst Familienmitglieder an."));
-    const activeMembers=this.data.members.filter(m=>pending.some(t=>(t.assignees||[]).includes(m.id)));
+    const activeMembers=this.data.members.filter(m=>pending.some(t=>(t.assignees||[]).includes(m.id)&&!this.completedFor(t,m.id)));
     if(!activeMembers.length && this.data.members.length) progress.append(this.el("div","empty","🎉 Super! Niemand hat gerade offene zugewiesene Aufgaben."));
     const memberGrid=this.el("div","member-card-grid");
     for(const member of activeMembers){
       const mine=this.data.tasks.filter(t=>(t.assignees||[]).includes(member.id));
-      const completed=mine.filter(t=>t.done).length;
-      const open=mine.filter(t=>!t.done).length;
-      const overdue=mine.filter(t=>!t.done&&t.due&&t.due<localDate).length;
-      const dueToday=mine.filter(t=>!t.done&&t.due===localDate).length;
+      const completed=mine.filter(t=>this.completedFor(t,member.id)).length;
+      const open=mine.filter(t=>!this.completedFor(t,member.id)).length;
+      const overdue=mine.filter(t=>!this.completedFor(t,member.id)&&t.due&&t.due<localDate).length;
+      const dueToday=mine.filter(t=>!this.completedFor(t,member.id)&&t.due===localDate).length;
       const ratio=mine.length?Math.round(completed/mine.length*100):0;
       const block=this.el("div","member-card");
       const head=this.el("div","member-head");
@@ -885,8 +886,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     picker.value=this.taskFilter||"";
     picker.addEventListener("change",()=>{this.taskFilter=picker.value;this.render();});filter.append(picker);card.append(filter);
     const visible=this.data.tasks.filter(t=>!this.taskFilter||(t.assignees||[]).includes(this.taskFilter));
-    const pending=visible.filter(t=>!t.done).sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
-    const done=visible.filter(t=>t.done);
+    const pending=visible.filter(t=>this.taskFilter?!this.completedFor(t,this.taskFilter):!this.completedForAll(t)).sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
+    const done=visible.filter(t=>this.taskFilter?this.completedFor(t,this.taskFilter):this.completedForAll(t));
     card.append(this.el("h3",null,`Offen (${pending.length})`));
     if(!pending.length)card.append(this.el("div","empty","Keine offenen Aufgaben."));else pending.forEach(t=>card.append(this.taskRow(t)));
     card.append(this.el("h3",null,`Erledigt (${done.length})`));
@@ -894,7 +895,12 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.renderRewards(page);
   }
   taskRow(t) {
-    const r=this.el("div",`item ${t.done?"done":""}`);const ch=this.el("input","check");ch.type="checkbox";ch.checked=!!t.done;ch.title="Erledigt ändern";ch.disabled=this.busy;ch.addEventListener("change",()=>this.request("task_toggle",{task_id:t.id}));r.append(ch);
+    const fullyDone=this.completedForAll(t);
+    const r=this.el("div",`item ${fullyDone?"done":""}`);
+    if((t.assignees||[]).length<=1){
+      const ch=this.el("input","check");ch.type="checkbox";ch.checked=fullyDone;ch.title="Erledigt ändern";ch.disabled=this.busy;
+      ch.addEventListener("change",()=>this.setTaskMember(t.id,t.assignees?.[0]||""));r.append(ch);
+    }
     const main=this.el("div","item-main");main.append(this.el("div","item-title",t.title));
     if(t.description)main.append(this.el("div","desc",t.description));
     const tags=this.el("div","chips");if(t.due)tags.append(this.el("span","chip",`📅 ${this.dateLabel(t.due)}`));
@@ -904,7 +910,18 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(repeatNames[t.repeat])tags.append(this.el("span","chip",`🔁 ${repeatNames[t.repeat]}`));
     if(t.completed_repeat)tags.append(this.el("span","chip","🔁 Wiederholung erstellt"));
     t.assignees.forEach(id=>{const member=this.data.members.find(m=>m.id===id);if(member){const chip=this.el("span","chip",member.name);chip.style.borderLeft=`4px solid ${member.color}`;tags.append(chip);}});
-    main.append(tags);r.append(main);
+    main.append(tags);
+    if(t.assignees?.length>1){
+      const statuses=this.el("div","member-badges");statuses.style.marginTop="12px";
+      for(const mid of t.assignees){
+        const label=this.el("label","person-choice");
+        const cb=this.el("input","check");cb.type="checkbox";cb.checked=this.completedFor(t,mid);cb.disabled=this.busy;
+        cb.addEventListener("change",()=>this.setTaskMember(t.id,mid));
+        label.append(cb,this.el("span",null,`${this.memberName(mid)} · ${cb.checked?"geschafft":"offen"}`));statuses.append(label);
+      }
+      main.append(statuses);
+    }
+    r.append(main);
     const buttons=this.el("div","actions");buttons.append(this.button("✎",()=>{this.tab="tasks";this.editTask={...t,assignees:[...t.assignees]};this.render();},"btn secondary"));
     buttons.append(this.button("×",()=>{if(confirm(`Aufgabe „${t.title}“ wirklich löschen?`))this.request("task_delete",{task_id:t.id});},"btn secondary danger"));r.append(buttons);return r;
   }

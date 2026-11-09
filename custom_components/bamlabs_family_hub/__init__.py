@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.18",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.19",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -157,6 +157,25 @@ def _child_member(hub, connection):
     return member_id if member_id in {m["id"] for m in hub["state"]["members"]} else None
 
 
+def _done_members(task):
+    """Legacy tasks marked done=True were completed for all assigned people."""
+    assigned = task.get("assignees", [])
+    if isinstance(task.get("done_members"), list):
+        return set(task["done_members"]) & set(assigned)
+    return set(assigned) if task.get("done") else set()
+
+
+def _done_for(task, member_id):
+    if not task.get("assignees"):
+        return bool(task.get("done"))
+    return member_id in _done_members(task)
+
+
+def _all_done(task):
+    assigned = task.get("assignees", [])
+    return all(_done_for(task, mid) for mid in assigned) if assigned else bool(task.get("done"))
+
+
 def _visible_state(hub, connection):
     """Never give a child's account other people's tasks, events or calendar sources."""
     state = hub["state"]
@@ -167,7 +186,7 @@ def _visible_state(hub, connection):
         return None
     return {"_role": "child", "_member_id": member_id,
             "members": [m for m in state["members"] if m["id"] == member_id],
-            "tasks": [t for t in state["tasks"] if member_id in t.get("assignees", [])],
+            "tasks": [{**t, "done": _done_for(t, member_id)} for t in state["tasks"] if member_id in t.get("assignees", [])],
             "events": [e for e in state["events"] if member_id in e.get("members", [])],
             "external_calendars": [], "calendar_members": {},
             "rewards": state.get("rewards", []),
@@ -236,7 +255,10 @@ async def ws_member_delete(hass, connection, msg):
             if mid == msg["member_id"]:
                 hub["state"]["child_users"].pop(uid, None)
         for task in hub["state"]["tasks"]:
+            old_completed = _done_members(task)
             task["assignees"] = [i for i in task.get("assignees", []) if i != msg["member_id"]]
+            task["done_members"] = [i for i in task["assignees"] if i in old_completed]
+            task["done"] = _all_done(task)
         for event in hub["state"]["events"]:
             event["members"] = [i for i in event.get("members", []) if i != msg["member_id"]]
         hub["state"]["calendar_members"] = {k: v for k, v in hub["state"].get("calendar_members", {}).items() if v != msg["member_id"]}
@@ -285,14 +307,21 @@ async def ws_task_save(hass, connection, msg):
             return
         fields = {"title": title, "description": description, "due": due, "priority": msg["priority"], "assignees": assignees, "repeat": msg["repeat"], "repeat_anchor": due if msg["repeat"] != "none" else "", "points": msg["points"]}
         if task:
+            old_done = _done_members(task)
             task.update(fields)
+            task["done_members"] = [mid for mid in assignees if mid in old_done]
+            task["done"] = _all_done(task)
         else:
-            tasks.append({"id": uuid4().hex, **fields, "done": False})
+            tasks.append({"id": uuid4().hex, **fields, "done": False, "done_members": []})
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
 
-@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/task_toggle", vol.Required("task_id"): str})
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/task_toggle",
+    vol.Required("task_id"): str,
+    vol.Optional("member_id", default=""): str,
+})
 @websocket_api.async_response
 async def ws_task_toggle(hass, connection, msg):
     hub = hass.data.get(DOMAIN)
@@ -300,53 +329,77 @@ async def ws_task_toggle(hass, connection, msg):
         connection.send_error(msg["id"], "unauthorized", "Keine Berechtigung")
         return
     async with hub["lock"]:
-        task = next((t for t in hub["state"]["tasks"] if t["id"] == msg["task_id"]), None)
-        if task and not _owner(connection) and _child_member(hub, connection) not in task.get("assignees", []):
-            connection.send_error(msg["id"], "unauthorized", "Das ist nicht deine Aufgabe")
-            return
+        tasks = hub["state"]["tasks"]
+        task = next((t for t in tasks if t["id"] == msg["task_id"]), None)
         if task is None:
             connection.send_error(msg["id"], "not_found", "Aufgabe nicht gefunden")
             return
-        tasks = hub["state"]["tasks"]
-        if task.get("done"):
+        assignees = task.get("assignees", [])
+        if _owner(connection):
+            member_id = msg.get("member_id") or (assignees[0] if len(assignees) == 1 else "")
+            if assignees and member_id not in assignees:
+                connection.send_error(msg["id"], "invalid_data", "Bitte die Person auswählen, die die Aufgabe erledigt hat")
+                return
+        else:
+            member_id = _child_member(hub, connection)
+            if member_id not in assignees:
+                connection.send_error(msg["id"], "unauthorized", "Das ist nicht deine Aufgabe")
+                return
+
+        current = _done_for(task, member_id) if assignees else bool(task.get("done"))
+        if current:
+            # Never remove a generated next task if someone already worked on it.
             successor_id = task.get("next_task_id")
             successor = next((t for t in tasks if t["id"] == successor_id), None) if successor_id else None
-            if successor and successor.get("done"):
-                connection.send_error(msg["id"], "invalid_data", "Eine spätere Wiederholung wurde bereits erledigt. Diese alte Aufgabe kann nicht wieder geöffnet werden.")
+            if successor and (successor.get("done") or _done_members(successor)):
+                connection.send_error(msg["id"], "invalid_data", "Die nächste Wiederholung wurde schon begonnen; bitte zuerst diese Aufgabe prüfen")
                 return
+            awards = [e for e in hub["state"]["point_entries"] if e.get("task_id") == task["id"]
+                      and e.get("kind") == "earned" and (not assignees or e.get("member_id") == member_id)]
+            for award in awards:
+                balance = sum(e["amount"] for e in hub["state"]["point_entries"] if e["member_id"] == award["member_id"])
+                if balance < award["amount"]:
+                    connection.send_error(msg["id"], "invalid_data", "Punkte wurden bereits eingelöst. Bitte zuerst mit den Eltern klären.")
+                    return
+            remove_ids = {e["id"] for e in awards}
+            hub["state"]["point_entries"] = [e for e in hub["state"]["point_entries"] if e["id"] not in remove_ids]
+            if assignees:
+                task["done_members"] = [mid for mid in assignees if mid in _done_members(task) and mid != member_id]
+            else:
+                task["done"] = False
             if successor:
                 tasks.remove(successor)
                 task["repeat"] = task.pop("completed_repeat", "none")
                 task.pop("next_task_id", None)
-            # Keep the points ledger consistent when a checkmark is reversed.
-            awards = [e for e in hub["state"]["point_entries"] if e.get("task_id") == task["id"] and e.get("kind") == "earned"]
-            for award in awards:
-                balance = sum(e["amount"] for e in hub["state"]["point_entries"] if e["member_id"] == award["member_id"])
-                if balance < award["amount"]:
-                    connection.send_error(msg["id"], "invalid_data", "Punkte wurden bereits für eine Belohnung eingelöst. Bitte zuerst mit den Eltern klären.")
-                    return
-            hub["state"]["point_entries"] = [e for e in hub["state"]["point_entries"] if not (e.get("task_id") == task["id"] and e.get("kind") == "earned")]
-            task["done"] = False
         else:
-            task["done"] = True
+            if assignees:
+                task["done_members"] = [mid for mid in assignees if mid in (_done_members(task) | {member_id})]
+            else:
+                task["done"] = True
+            awarded_people = [member_id] if assignees else []
             if task.get("points", 0) > 0:
-                for member in task.get("assignees", []):
-                    hub["state"]["point_entries"].append({"id": uuid4().hex, "kind": "earned", "task_id": task["id"],
-                        "member_id": member, "amount": task["points"], "label": task["title"],
-                        "at": dt_util.now().isoformat()})
-            kind = task.get("repeat", "none")
-            if kind != "none":
-                next_task = {k: task[k] for k in ("title", "description", "priority", "assignees", "repeat", "points")}
-                next_task["assignees"] = list(next_task["assignees"])
-                next_task["repeat_anchor"] = task.get("repeat_anchor") or task["due"]
-                next_task["due"] = _next_task_due(task, dt_util.now().date())
-                next_task["id"] = uuid4().hex
-                next_task["done"] = False
-                next_task["series_id"] = task.get("series_id") or task["id"]
-                task["next_task_id"] = next_task["id"]
-                task["completed_repeat"] = kind
-                task["repeat"] = "none"
-                tasks.append(next_task)
+                for person in awarded_people:
+                    if not any(e.get("task_id") == task["id"] and e.get("member_id") == person and e.get("kind") == "earned"
+                               for e in hub["state"]["point_entries"]):
+                        hub["state"]["point_entries"].append({"id": uuid4().hex, "kind": "earned", "task_id": task["id"],
+                            "member_id": person, "amount": task["points"], "label": task["title"],
+                            "at": dt_util.now().isoformat()})
+            if _all_done(task):
+                kind = task.get("repeat", "none")
+                if kind != "none" and not task.get("next_task_id"):
+                    next_task = {k: task[k] for k in ("title", "description", "priority", "assignees", "repeat", "points")}
+                    next_task["assignees"] = list(next_task["assignees"])
+                    next_task["repeat_anchor"] = task.get("repeat_anchor") or task["due"]
+                    next_task["due"] = _next_task_due(task, dt_util.now().date())
+                    next_task["id"] = uuid4().hex
+                    next_task["done"] = False
+                    next_task["done_members"] = []
+                    next_task["series_id"] = task.get("series_id") or task["id"]
+                    task["next_task_id"] = next_task["id"]
+                    task["completed_repeat"] = kind
+                    task["repeat"] = "none"
+                    tasks.append(next_task)
+        task["done"] = _all_done(task)
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
@@ -804,7 +857,7 @@ async def _send_task_reminder(hass, force=False):
         member_names = {member["id"]: member.get("name", "Familienmitglied") for member in state.get("members", [])}
         lines = []
         for task in sorted(pending, key=lambda item: item["due"])[:20]:
-            assigned = ", ".join(member_names.get(mid, "Familienmitglied") for mid in task.get("assignees", [])) or "Nicht zugeordnet"
+            assigned = ", ".join(member_names.get(mid, "Familienmitglied") for mid in task.get("assignees", []) if not _done_for(task, mid)) or "Nicht zugeordnet"
             tag = "Überfällig" if task["due"] < today else "Heute"
             lines.append(f"- **{tag}:** {task.get('title', 'Aufgabe')[:160]} ({assigned})")
         if len(pending) > 20:
@@ -915,7 +968,7 @@ async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
         if test_member is None and now.hour < int(member_hours.get(mid, reminder.get("hour", 8))):
             continue
         allow_overdue = member_overdue.get(mid, include_overdue) is not False
-        pending = [task for task in tasks if not task.get("done") and mid in task.get("assignees", [])
+        pending = [task for task in tasks if not _done_for(task, mid) and mid in task.get("assignees", [])
                    and task.get("due") and (task["due"] == today or (allow_overdue and task["due"] < today))]
         if not pending and test_member is None:
             continue
@@ -975,7 +1028,7 @@ async def ws_push_diagnose(hass, connection, msg):
         mid = member["id"]
         hour = int(hours.get(mid, reminder.get("hour", 8)))
         overdue = per_member_overdue.get(mid, reminder.get("include_overdue", True)) is not False
-        due_count = sum(1 for task in tasks if not task.get("done") and mid in task.get("assignees", [])
+        due_count = sum(1 for task in tasks if not _done_for(task, mid) and mid in task.get("assignees", [])
                         and task.get("due") and (task["due"] == today or (overdue and task["due"] < today)))
         dev = devices.get(mid, "")
         sent_today = last.get(mid) == today
