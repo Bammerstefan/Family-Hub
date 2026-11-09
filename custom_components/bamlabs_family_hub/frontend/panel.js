@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.21";
+const FAMILY_HUB_UI_VERSION = "0.3.23";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -90,8 +90,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",event_save:"Termin",reward_save:"Belohnung"};
+      const saveLabels={calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",tablet_settings_save:"Tablet-Zugang",event_save:"Termin",reward_save:"Belohnung"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
+      if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
       this.editTask = null;
       this.editEvent = null;
@@ -192,7 +193,28 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       .hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}.hero-card{padding:18px;border-radius:18px;background:linear-gradient(180deg,#ffffff,#f7faff);border:1px solid var(--divider-color,#dfe5ee);box-shadow:0 2px 10px #00000006}.hero-icon{font-size:28px}.hero-value{font-size:30px;font-weight:800;margin-top:6px}.hero-label{font-size:14px;color:var(--secondary-text-color,#697386);margin-top:4px}.big-link-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0 20px}.big-link{display:grid;gap:6px;align-content:start;text-align:left;padding:18px;border-radius:18px;border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff)}.big-link-icon{font-size:28px}.big-link-title{font-weight:800;font-size:18px}.big-link small{font-size:13px;color:var(--secondary-text-color,#697386)}.member-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.member-card{border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;padding:16px;background:var(--card-background-color,#fff);display:grid;gap:10px}.member-head{display:flex;align-items:center;gap:12px}.member-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:19px;flex-shrink:0}.member-name{font-size:18px;font-weight:800}.member-task-count{font-size:14px;color:var(--secondary-text-color,#697386)}.member-badges{display:flex;gap:8px;flex-wrap:wrap}.member-badge{padding:6px 10px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:13px;font-weight:700}.section-note{margin-top:-8px;margin-bottom:16px}.focus-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.kid-hero{background:linear-gradient(135deg,#fff6cc,#ffe8f0 50%,#ecf6ff);border:1px solid #f2df9d}.kid-big-title{font-size:28px;font-weight:900;line-height:1.1}.kid-sub{font-size:15px;color:#4d5b73}.kid-quick-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}.child-big-btn{display:grid;gap:6px;justify-items:center;align-content:center;text-align:center;min-height:92px;padding:14px;border-radius:18px;border:0;background:#ffffff}.child-big-btn span:first-child{font-size:30px}.child-big-btn strong{font-size:18px}.kid-section-title{font-size:24px;font-weight:900;margin:0 0 8px}.kid-section-note{font-size:14px;color:var(--secondary-text-color,#697386);margin-bottom:12px}.kid-stack{display:grid;gap:12px}.kid-empty{padding:18px;border-radius:16px;background:#fff9e8;border:1px dashed #e6d28b;font-weight:700}.mini-note{font-size:12px;color:var(--secondary-text-color,#697386)}
       .brand{font-weight:900;letter-spacing:-.7px}.page{max-width:1280px}.nav{gap:8px;flex-wrap:wrap;overflow:visible}.tab{border-radius:17px;padding:11px 16px}.tab.selected{background:linear-gradient(120deg,#3784d7,#7461ce);border-color:#5c70d0;color:#fff}.panel{border-radius:21px}.big-link{transition:transform .15s,box-shadow .15s;box-shadow:0 5px 15px #1c31550c}.big-link:hover,.child-big-btn:hover{transform:translateY(-2px)}.hero-card:nth-child(1){background:#f0eaff}.hero-card:nth-child(2){background:#e4f7ed}.hero-card:nth-child(3){background:#fff0d9}.hero-card:nth-child(4){background:#e7f4ff} .hero-action{display:grid;text-align:left;justify-items:start;color:#283348!important;cursor:pointer;min-height:150px;transition:transform .15s,box-shadow .15s} .hero-action:hover{transform:translateY(-2px);box-shadow:0 9px 24px #39205f22}.hero-action:focus-visible{outline:3px solid #216db8;outline-offset:3px}.hero-action .hero-value,.hero-action .hero-label{color:#283348}.hero-hint{font-size:13px;margin-top:6px;font-weight:750;color:#6048a1}.kid-quick-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.child-big-btn{border:1px solid #ebe4f1;box-shadow:0 5px 14px #50638510}.child-task{border-radius:17px;min-height:76px}.child-task .check{width:32px;height:32px}.member-card{border-radius:21px}.big-link:focus-visible,.tab:focus-visible,.routine-step:focus-visible,.child-big-btn:focus-visible{outline:3px solid #0077c8;outline-offset:3px}
       .routine-hero{background:linear-gradient(135deg,#fff5dc,#f1e9ff 55%,#e5f8f2);border:1px solid #e7ddec}.routine-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.routine-card{border-radius:22px;padding:19px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#e4e8ef);box-shadow:0 7px 22px #1e35510c}.routine-head{display:flex;gap:13px;align-items:center;margin-bottom:12px}.routine-emoji{font-size:40px;line-height:1}.routine-name{font-size:23px;font-weight:850}.routine-step-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.routine-step{position:relative;border:2px solid var(--divider-color,#dfe5ee);border-radius:17px;background:#f7f9ff;color:var(--primary-text-color,#192238);padding:14px 10px;min-height:108px;display:grid;justify-items:center;align-content:center;gap:7px;text-align:center;font-weight:800}.routine-step strong{font-size:15px}.routine-step .routine-symbol{font-size:32px}.routine-step.done{background:#e4f9ed;border-color:#69c58d}.routine-step.done strong{text-decoration:none}.routine-meter{height:12px;border-radius:99px;background:#ebedf3;overflow:hidden;margin:10px 0}.routine-meter-fill{height:100%;background:linear-gradient(90deg,#6ab6ee,#66d0a3);border-radius:99px}.routine-management{display:grid;gap:12px}.routine-form-steps{display:grid;gap:8px;grid-column:1/-1}.routine-step-edit{display:grid;grid-template-columns:100px 1fr auto;gap:8px;align-items:center}.routine-day{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:12px;background:var(--secondary-background-color,#f0f2f6);margin:3px}.routine-day input{width:20px;height:20px}.routine-avatar{font-size:14px;font-weight:800;border-radius:40px;padding:5px 10px;background:#f1f4ff}.kid-hero{box-shadow:0 10px 28px #6d8fd214}.panel{box-shadow:0 5px 19px #2b45680b}.tab{min-height:46px}.btn{min-height:42px}.routine-quiet{font-size:13px;color:var(--secondary-text-color,#697386)} .today-routines{margin:14px 0 25px} .routine-person-label{border-left:5px solid #6d7e9c;padding:7px 12px;margin-bottom:12px;border-radius:8px;background:var(--secondary-background-color,#eef1f6);font-weight:800;font-size:16px}
+      .tablet-picker-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin:20px 0}.tablet-person{border:2px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);color:var(--primary-text-color,#192238);border-radius:22px;min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-size:21px;font-weight:800;cursor:pointer}.tablet-person-avatar{height:86px;width:86px;border-radius:50%;color:#fff;display:grid;place-items:center;font-size:35px;font-weight:900}.tablet-person:focus-visible{outline:4px solid #1464db;outline-offset:3px}
       @media(max-width:700px){.routine-grid{grid-template-columns:1fr}.routine-step-edit{grid-template-columns:85px 1fr}.routine-step-edit button{grid-column:1/-1}.routine-step-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.routine-step{min-height:104px}}
+
+      /* Family tablet: show all activities grouped by person, never mixed between children. */
+      .routine-person-list{display:grid;gap:24px}
+      .routine-person-group{border-radius:22px;overflow:hidden;border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff)}
+      .routine-person-head{padding:18px 20px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+      .routine-person-avatar{width:52px;height:52px;display:grid;place-items:center;border-radius:50%;background:#ffffff25;border:2px solid currentColor;font-weight:900;font-size:25px;flex-shrink:0}
+      .routine-person-heading{display:grid;gap:4px;flex:1;min-width:120px}
+      .routine-person-heading strong{font-size:24px}
+      .routine-person-heading span{font-size:14px;font-weight:600}
+      .routine-person-status{border:1px solid currentColor;border-radius:999px;padding:7px 11px;font-size:14px;font-weight:800}
+      .routine-person-progress{padding:0 20px}
+      .routine-person-cards{padding:12px 18px 20px;display:grid;gap:14px;grid-template-columns:1fr}
+      .routine-person-cards .routine-card{margin:0}
+      /* High-contrast labels on light routine buttons in Home Assistant dark mode. */
+      .routine-step{color:#253349!important;background:#f7f9ff}
+      .routine-step .small{color:#52647c!important}
+      .routine-step.done{color:#14532d!important;background:#e4f9ed}
+      .routine-step.done .small{color:#166534!important}
+      @media(max-width:650px){.routine-person-head{padding:14px 12px}.routine-person-heading strong{font-size:20px}.routine-person-cards{padding:10px}.routine-person-status{font-size:12px}}
+
       @media(max-width:950px){.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.member-card-grid,.focus-grid{grid-template-columns:1fr}}@media(max-width:850px){.week-days{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:450px){.week-days{grid-template-columns:1fr}}@media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:1fr}.member-card-grid,.focus-grid{grid-template-columns:1fr}.kid-big-title{font-size:24px}}`;
     root.append(style);
     const page=this.el("main","page");
@@ -209,6 +231,16 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     header.append(left,tools);page.append(header);
     if(this.backendVersion && this.backendVersion!==FAMILY_HUB_UI_VERSION && this.backendVersion!=="nicht abrufbar") {
       page.append(this.el("div","notice",`Oberfläche und Backend haben verschiedene Versionen (${versionText}). Bitte das Update im Marketplace installieren, Home Assistant neu starten und dann Aktualisieren drücken.`));
+    }
+    if(this.loaded && this.data._role === "tablet_picker") {
+      this.renderTabletPicker(page);
+      root.append(page);
+      return;
+    }
+    if(this.loaded && this.data._tablet_mode) {
+      const switchBar=this.el("div","actions");
+      switchBar.append(this.button("👧 Kind wechseln",()=>this.selectTabletMember(""),"btn secondary"));
+      page.append(switchBar);
     }
     const nav=this.el("nav","nav");
     const child = this.data._role === "child";
@@ -233,6 +265,34 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     }
     page.append(this.el("div","small footer","Der Family Hub speichert die Familiendaten lokal in Home Assistant."));
     root.append(page);
+  }
+  async selectTabletMember(memberId) {
+    if(this.busy) return;
+    this.busy=true;
+    try {
+      this.data=await this._hass.callWS({type:"bamlabs_family_hub/tablet_select", member_id:memberId});
+      this.tab="today";
+      this.error="";
+      this.savedNotice="";
+    } catch(e) { this.error=e.message||String(e); }
+    finally {this.busy=false;this.render();}
+  }
+  renderTabletPicker(page) {
+    const panel=this.el("section","panel");
+    panel.append(this.cardTitle("🌈 Wer bist du?"));
+    panel.append(this.el("p","small","Tippe auf dein Bild. Dann siehst du deine Aufgaben und deinen Tag."));
+    const grid=this.el("div","tablet-picker-grid");
+    for(const member of this.data.members||[]) {
+      const btn=this.button("",()=>this.selectTabletMember(member.id),"tablet-person");
+      const avatar=this.el("span","tablet-person-avatar",(member.name||"?").slice(0,1).toUpperCase());
+      avatar.style.backgroundColor=member.color;
+      btn.append(avatar,this.el("strong",null,member.name));
+      grid.append(btn);
+    }
+    if(!grid.childNodes.length)panel.append(this.el("p","small","Noch keine Familienmitglieder eingerichtet."));
+    panel.append(grid);
+    panel.append(this.el("p","small","🔒 Einstellungen für Erwachsene sind nur mit dem Elternkonto zugänglich."));
+    page.append(panel);
   }
   renderWeek(page) {
     const start=this.monday(this.weekAnchor);
@@ -638,6 +698,20 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     intro.append(this.el("p","small","Jedes Kind bekommt einen persönlichen QR-Code. Der Code öffnet Family Hub auf dem Handy – ohne Passwort im QR-Code. Zur Anmeldung benötigt das Kind einmalig ein eigenes Home-Assistant-Konto ohne Administratorrechte."));
     intro.append(this.el("p","small","1. Unter Einstellungen → Personen → Benutzer ein eigenes normales Benutzerkonto für jedes Kind anlegen. 2. Hier das Konto mit dem Kind verbinden. 3. QR-Code mit dem Handy scannen und beim ersten Aufruf anmelden. Danach sieht das Kind nur seine zugewiesenen Aufgaben und Termine."));
     intro.append(this.button(this.childAccounts?"Benutzer neu laden":"Kinderkonten anzeigen",()=>this.fetchChildAccounts(),"btn secondary"));
+    intro.append(this.el("h3",null,"🖥️ Familientablet mit Kinderauswahl"));
+    intro.append(this.el("p","small","Für das Küchentablet ein eigenes Home-Assistant-Konto ohne Administratorrechte anlegen. Nur dieses Konto zeigt die großen Kinderkacheln. Die Elternverwaltung bleibt geschützt und ist mit dem Tablet-Konto nicht zugänglich."));
+    if(this.childAccounts) {
+      const field=this.el("label","field"); field.append(this.el("span","field-title","Home-Assistant-Konto für das Familientablet"));
+      const choice=this.el("select");const empty=this.el("option",null,"Nicht eingerichtet");empty.value="";choice.append(empty);
+      for(const user of this.childAccounts.users) {
+        if(Object.prototype.hasOwnProperty.call(this.childAccounts.assignments||{},user.id)) continue;
+        const opt=this.el("option",null,user.name);opt.value=user.id;choice.append(opt);
+      }
+      choice.value=this.childAccounts.tablet_user_id||"";
+      field.append(choice);intro.append(field);
+      intro.append(this.button("💾 Tablet-Zugang speichern",()=>this.request("tablet_settings_save",{user_id:choice.value}),"btn"));
+      intro.append(this.el("p","small","Danach am Tablet mit genau diesem Benutzer anmelden und den Family Hub öffnen. Zwischen Kindern kann man über „Kind wechseln“ umschalten. Für Elternfunktionen ist ein anderer Login erforderlich."));
+    }
     page.append(intro);
     if(!this.childAccounts)return;
     const items=this.el("div","list");
@@ -877,19 +951,42 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const todaySection=this.el("section","today-routines");
       todaySection.append(this.el("h3","kid-section-title","🌞 Das steht heute an"));
       todaySection.append(this.el("p","kid-section-note","Jedes Kind kann seine Schritte direkt hier auf dem Familientablet abhaken."));
-      const todayGrid=this.el("div","routine-grid");
-      for(const r of today){
-        for(const id of (r.member_ids||[])){
-          const card=this.routineCard(r,id);
-          const member=this.data.members.find(m=>m.id===id);
-          const label=this.el("div","routine-person-label",`👤 ${member?.name||"Kind"}`);
-          if(member?.color)label.style.borderLeftColor=member.color;
-          card.prepend(label);
-          todayGrid.append(card);
-        }
+      const personList=this.el("div","routine-person-list");
+      // Keep all routines of one child together, in the configured member order.
+      for(const member of this.data.members){
+        const mine=today.filter(r=>(r.member_ids||[]).includes(member.id));
+        if(!mine.length)continue;
+        const group=this.el("section","routine-person-group");
+        const head=this.el("div","routine-person-head");
+        const hex=/^#[0-9a-fA-F]{6}$/.test(member.color||"")?member.color:"#64748b";
+        head.style.backgroundColor=hex;
+        // White or dark text, depending on the luminance of the profile colour.
+        const red=parseInt(hex.slice(1,3),16),green=parseInt(hex.slice(3,5),16),blue=parseInt(hex.slice(5,7),16);
+        const luminance=(0.2126*red+0.7152*green+0.0722*blue)/255;
+        head.style.color=luminance>0.62?"#142033":"#ffffff";
+        const avatar=this.el("span","routine-person-avatar",member.name.slice(0,1).toUpperCase());
+        const who=this.el("div","routine-person-heading");
+        who.append(this.el("strong",null,`👤 ${member.name}`));
+        const total=mine.reduce((sum,r)=>sum+(r.steps||[]).length,0);
+        const done=mine.reduce((sum,r)=>sum+(r.steps||[]).filter(step=>this.routineDone(r,member.id,step.id)).length,0);
+        who.append(this.el("span",null,done===total?"🎉 Alles geschafft!":`${done} von ${total} Schritten geschafft`));
+        head.append(avatar,who);
+        const status=this.el("span","routine-person-status",done===total?"✅ Fertig":"🧩 Noch zu tun");
+        head.append(status);
+        group.append(head);
+        const progress=this.el("div","routine-person-progress");
+        const meter=this.el("div","routine-meter");
+        const fill=this.el("div","routine-meter-fill");
+        fill.style.width=`${total?done/total*100:100}%`;
+        fill.style.backgroundColor=hex;
+        meter.append(fill);progress.append(meter);group.append(progress);
+        const cards=this.el("div","routine-person-cards");
+        mine.forEach(r=>cards.append(this.routineCard(r,member.id)));
+        group.append(cards);
+        personList.append(group);
       }
-      if(!todayGrid.children.length) todaySection.append(this.el("div","kid-empty","🎉 Heute steht keine Routine an."));
-      else todaySection.append(todayGrid);
+      if(!personList.children.length) todaySection.append(this.el("div","kid-empty","🎉 Heute steht keine Routine an."));
+      else todaySection.append(personList);
       section.append(todaySection);
       section.append(this.el("h3","kid-section-title","⚙️ Routinen verwalten"));
       const grid=this.el("div","routine-grid");

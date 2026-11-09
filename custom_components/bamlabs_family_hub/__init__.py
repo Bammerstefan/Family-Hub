@@ -92,10 +92,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
-    hub_data.update({"state": state, "store": store, "lock": lock})
+    hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}})
 
     # Register websocket commands when the config entry loads, rather than
     # relying exclusively on async_setup. This also fixes updates where the
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.21",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.23",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -153,7 +153,10 @@ def _child_member(hub, connection):
     user = connection.user
     if not user or not user.is_active or user.is_admin:
         return None
-    member_id = hub["state"].get("child_users", {}).get(user.id)
+    if user.id == hub["state"].get("tablet_user_id"):
+        member_id = hub.setdefault("tablet_selection", {}).get(user.id)
+    else:
+        member_id = hub["state"].get("child_users", {}).get(user.id)
     return member_id if member_id in {m["id"] for m in hub["state"]["members"]} else None
 
 
@@ -181,10 +184,19 @@ def _visible_state(hub, connection):
     state = hub["state"]
     if _owner(connection):
         return {**state, "_role": "admin"}
+    user = connection.user
+    if user and user.is_active and user.id == state.get("tablet_user_id"):
+        member_id = _child_member(hub, connection)
+        if not member_id:
+            return {"_role": "tablet_picker", "members": [
+                {"id": m["id"], "name": m["name"], "color": m["color"]}
+                for m in state["members"]], "tasks": [], "events": [], "routines": [],
+                "point_entries": [], "rewards": [], "routine_checks": [],
+                "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
         return None
-    return {"_role": "child", "_member_id": member_id,
+    return {"_role": "child", "_tablet_mode": bool(user and user.id == state.get("tablet_user_id")), "_member_id": member_id,
             "members": [m for m in state["members"] if m["id"] == member_id],
             "tasks": [{**t, "done": _done_for(t, member_id)} for t in state["tasks"] if member_id in t.get("assignees", [])],
             "events": [e for e in state["events"] if member_id in e.get("members", [])],
@@ -193,6 +205,56 @@ def _visible_state(hub, connection):
             "point_entries": [e for e in state.get("point_entries", []) if e.get("member_id") == member_id],
             "routines": [r for r in state.get("routines", []) if member_id in r.get("member_ids", [])],
             "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id]}
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/tablet_select",
+    vol.Required("member_id"): str,
+})
+@websocket_api.async_response
+async def ws_tablet_select(hass, connection, msg):
+    """Choose a child on a dedicated non-admin tablet account; never grant admin access."""
+    hub = hass.data.get(DOMAIN)
+    user = connection.user
+    if (not hub or not user or not user.is_active or user.is_admin
+            or user.id != hub["state"].get("tablet_user_id")):
+        connection.send_error(msg["id"], "unauthorized", "Kein Tablet-Zugang")
+        return
+    member_id = msg["member_id"]
+    if member_id and member_id not in {m["id"] for m in hub["state"]["members"]}:
+        connection.send_error(msg["id"], "invalid_member", "Kind nicht gefunden")
+        return
+    if member_id:
+        hub.setdefault("tablet_selection", {})[user.id] = member_id
+    else:
+        hub.setdefault("tablet_selection", {}).pop(user.id, None)
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/tablet_settings_save",
+    vol.Required("user_id"): str,
+})
+@websocket_api.async_response
+async def ws_tablet_settings_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    uid = msg["user_id"]
+    if uid:
+        user = await hass.auth.async_get_user(uid)
+        if not user or not user.is_active or user.is_admin or user.system_generated:
+            connection.send_error(msg["id"], "invalid_user", "Bitte ein aktives Nicht-Admin-Konto wählen")
+            return
+        if uid in hub["state"].get("child_users", {}):
+            connection.send_error(msg["id"], "invalid_user", "Dieses Konto ist bereits einem Kind zugeordnet")
+            return
+    async with hub["lock"]:
+        hub["state"]["tablet_user_id"] = uid
+        hub.setdefault("tablet_selection", {}).clear()
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/state"})
@@ -724,7 +786,7 @@ async def ws_child_accounts(hass, connection, msg):
     connection.send_result(msg["id"], {
         "users": [{"id": u.id, "name": u.name or "Benutzer", "active": u.is_active}
                   for u in users if u.is_active and not u.is_admin and not u.system_generated],
-        "assignments": hub["state"].get("child_users", {})})
+        "assignments": hub["state"].get("child_users", {}), "tablet_user_id": hub["state"].get("tablet_user_id", "")})
 
 
 @websocket_api.websocket_command({
@@ -748,6 +810,9 @@ async def ws_child_assign(hass, connection, msg):
             user = await hass.auth.async_get_user(user_id)
             if user is None or not user.is_active or user.is_admin or user.system_generated:
                 connection.send_error(msg["id"], "invalid_data", "Bitte ein normales, aktives Home-Assistant-Konto auswählen")
+                return
+            if user_id == hub["state"].get("tablet_user_id"):
+                connection.send_error(msg["id"], "invalid_data", "Dieses Konto ist für das Familientablet reserviert")
                 return
             # One Home Assistant account per child, one account cannot belong to multiple children.
             assignments.pop(user_id, None)
@@ -1275,7 +1340,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
-        ws_child_accounts, ws_child_assign, ws_child_qr,
+        ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_select, ws_tablet_settings_save,
         ws_child_task_create, ws_child_event_create,
     ):
         websocket_api.async_register_command(hass, command)
