@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.27";
+const FAMILY_HUB_UI_VERSION = "0.3.28";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -43,8 +43,16 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.displaySettingsOpen = false;
     this._displayInterval = null;
     this._lastSlide = Date.now();
+    this._mountedOnce = false;
   }
   connectedCallback() {
+    // HA normally re-mounts the custom panel after navigating away and back.
+    // On re-entry, return the restricted tablet account to the name selection.
+    if (this._mountedOnce && this.loaded && this._hass && this.data._tablet_mode) {
+      this.displayMode=false;
+      this.load();
+    }
+    this._mountedOnce=true;
     // Refresh visible calendar data regularly while this panel is mounted.
     // Home Assistant's Google integration remains responsible for Google polling.
     if (!this._displayInterval) {
@@ -85,7 +93,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if (!this._hass) return;
     this.busy = true;
     try {
-      this.data = await this._hass.callWS({type:"bamlabs_family_hub/state"});
+      this.data = await this._hass.callWS({type:"bamlabs_family_hub/tablet_enter"});
+      this.tab = "today";
       this.loaded = true;
       this.error = "";
       this.checkVersion();
@@ -223,7 +232,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       .hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}.hero-card{padding:18px;border-radius:18px;background:linear-gradient(180deg,#ffffff,#f7faff);border:1px solid var(--divider-color,#dfe5ee);box-shadow:0 2px 10px #00000006}.hero-icon{font-size:28px}.hero-value{font-size:30px;font-weight:800;margin-top:6px}.hero-label{font-size:14px;color:var(--secondary-text-color,#697386);margin-top:4px}.big-link-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0 20px}.big-link{display:grid;gap:6px;align-content:start;text-align:left;padding:18px;border-radius:18px;border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff)}.big-link-icon{font-size:28px}.big-link-title{font-weight:800;font-size:18px}.big-link small{font-size:13px;color:var(--secondary-text-color,#697386)}.member-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.member-card{border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;padding:16px;background:var(--card-background-color,#fff);display:grid;gap:10px}.member-head{display:flex;align-items:center;gap:12px}.member-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:19px;flex-shrink:0}.member-name{font-size:18px;font-weight:800}.member-task-count{font-size:14px;color:var(--secondary-text-color,#697386)}.member-badges{display:flex;gap:8px;flex-wrap:wrap}.member-badge{padding:6px 10px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:13px;font-weight:700}.section-note{margin-top:-8px;margin-bottom:16px}.focus-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.kid-hero{background:linear-gradient(135deg,#fff6cc,#ffe8f0 50%,#ecf6ff);border:1px solid #f2df9d}.kid-big-title{font-size:28px;font-weight:900;line-height:1.1}.kid-sub{font-size:15px;color:#4d5b73}.kid-quick-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}.child-big-btn{display:grid;gap:6px;justify-items:center;align-content:center;text-align:center;min-height:92px;padding:14px;border-radius:18px;border:0;background:#ffffff}.child-big-btn span:first-child{font-size:30px}.child-big-btn strong{font-size:18px}.kid-section-title{font-size:24px;font-weight:900;margin:0 0 8px}.kid-section-note{font-size:14px;color:var(--secondary-text-color,#697386);margin-bottom:12px}.kid-stack{display:grid;gap:12px}.kid-empty{padding:18px;border-radius:16px;background:#fff9e8;border:1px dashed #e6d28b;font-weight:700}.mini-note{font-size:12px;color:var(--secondary-text-color,#697386)}
       .brand{font-weight:900;letter-spacing:-.7px}.page{max-width:1280px}.nav{gap:8px;flex-wrap:wrap;overflow:visible}.tab{border-radius:17px;padding:11px 16px}.tab.selected{background:linear-gradient(120deg,#3784d7,#7461ce);border-color:#5c70d0;color:#fff}.panel{border-radius:21px}.big-link{transition:transform .15s,box-shadow .15s;box-shadow:0 5px 15px #1c31550c}.big-link:hover,.child-big-btn:hover{transform:translateY(-2px)}.hero-card:nth-child(1){background:#f0eaff}.hero-card:nth-child(2){background:#e4f7ed}.hero-card:nth-child(3){background:#fff0d9}.hero-card:nth-child(4){background:#e7f4ff} .hero-action{display:grid;text-align:left;justify-items:start;color:#283348!important;cursor:pointer;min-height:150px;transition:transform .15s,box-shadow .15s} .hero-action:hover{transform:translateY(-2px);box-shadow:0 9px 24px #39205f22}.hero-action:focus-visible{outline:3px solid #216db8;outline-offset:3px}.hero-action .hero-value,.hero-action .hero-label{color:#283348}.hero-hint{font-size:13px;margin-top:6px;font-weight:750;color:#6048a1}.kid-quick-grid{grid-template-columns:repeat(4,minmax(0,1fr))}.child-big-btn{border:1px solid #ebe4f1;box-shadow:0 5px 14px #50638510}.child-task{border-radius:17px;min-height:76px}.child-task .check{width:32px;height:32px}.member-card{border-radius:21px}.big-link:focus-visible,.tab:focus-visible,.routine-step:focus-visible,.child-big-btn:focus-visible{outline:3px solid #0077c8;outline-offset:3px}
       .routine-hero{background:linear-gradient(135deg,#fff5dc,#f1e9ff 55%,#e5f8f2);border:1px solid #e7ddec}.routine-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.routine-card{border-radius:22px;padding:19px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#e4e8ef);box-shadow:0 7px 22px #1e35510c}.routine-head{display:flex;gap:13px;align-items:center;margin-bottom:12px}.routine-emoji{font-size:40px;line-height:1}.routine-name{font-size:23px;font-weight:850}.routine-step-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.routine-step{position:relative;border:2px solid var(--divider-color,#dfe5ee);border-radius:17px;background:#f7f9ff;color:var(--primary-text-color,#192238);padding:14px 10px;min-height:108px;display:grid;justify-items:center;align-content:center;gap:7px;text-align:center;font-weight:800}.routine-step strong{font-size:15px}.routine-step .routine-symbol{font-size:32px}.routine-step.done{background:#e4f9ed;border-color:#69c58d}.routine-step.done strong{text-decoration:none}.routine-meter{height:12px;border-radius:99px;background:#ebedf3;overflow:hidden;margin:10px 0}.routine-meter-fill{height:100%;background:linear-gradient(90deg,#6ab6ee,#66d0a3);border-radius:99px}.routine-management{display:grid;gap:12px}.routine-form-steps{display:grid;gap:8px;grid-column:1/-1}.routine-step-edit{display:grid;grid-template-columns:100px 1fr auto;gap:8px;align-items:center}.routine-day{display:inline-flex;align-items:center;gap:6px;padding:7px 10px;border-radius:12px;background:var(--secondary-background-color,#f0f2f6);margin:3px}.routine-day input{width:20px;height:20px}.routine-avatar{font-size:14px;font-weight:800;border-radius:40px;padding:5px 10px;background:#f1f4ff}.kid-hero{box-shadow:0 10px 28px #6d8fd214}.panel{box-shadow:0 5px 19px #2b45680b}.tab{min-height:46px}.btn{min-height:42px}.routine-quiet{font-size:13px;color:var(--secondary-text-color,#697386)} .today-routines{margin:14px 0 25px} .routine-person-label{border-left:5px solid #6d7e9c;padding:7px 12px;margin-bottom:12px;border-radius:8px;background:var(--secondary-background-color,#eef1f6);font-weight:800;font-size:16px}
-      .tablet-picker-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin:20px 0}.tablet-person{border:2px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);color:var(--primary-text-color,#192238);border-radius:22px;min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-size:21px;font-weight:800;cursor:pointer}.tablet-person-avatar{height:86px;width:86px;border-radius:50%;color:#fff;display:grid;place-items:center;font-size:35px;font-weight:900}.tablet-person:focus-visible{outline:4px solid #1464db;outline-offset:3px}
+      .tablet-picker-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin:20px 0}.tablet-person{border:2px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);color:var(--primary-text-color,#192238);border-radius:22px;min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-size:21px;font-weight:800;cursor:pointer}.tablet-person-avatar{height:86px;width:86px;border-radius:50%;color:#fff;display:grid;place-items:center;font-size:35px;font-weight:900}.tablet-person:focus-visible{outline:4px solid #1464db;outline-offset:3px}.tablet-person{border-color:var(--person-color,#dfe5ee);border-width:3px;background:linear-gradient(180deg,var(--person-tint,#f3f6fb),var(--card-background-color,#fff));min-height:190px}.tablet-person-avatar{background:var(--person-color,#5685d1);font-size:42px;box-shadow:0 5px 15px #00000013}.tablet-person strong{font-size:24px}.tablet-person .small{font-size:13px}
       @media(max-width:700px){.routine-grid{grid-template-columns:1fr}.routine-step-edit{grid-template-columns:85px 1fr}.routine-step-edit button{grid-column:1/-1}.routine-step-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.routine-step{min-height:104px}}
 
       /* Clearly separated mobile reminder settings for large families. */
@@ -348,18 +357,19 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   renderTabletPicker(page) {
     const panel=this.el("section","panel");
     panel.append(this.cardTitle("🌈 Wer bist du?"));
-    panel.append(this.el("p","small","Tippe auf dein Bild. Dann siehst du deine Aufgaben und deinen Tag."));
+    panel.append(this.el("p","small","Tippe auf dein farbiges Bild. Hier könnt ihr euch am selben Tablet abwechseln."));
     const grid=this.el("div","tablet-picker-grid");
     for(const member of this.data.members||[]) {
       const btn=this.button("",()=>this.selectTabletMember(member.id),"tablet-person");
-      const avatar=this.el("span","tablet-person-avatar",(member.name||"?").slice(0,1).toUpperCase());
-      avatar.style.backgroundColor=member.color;
-      btn.append(avatar,this.el("strong",null,member.name));
+      btn.style.setProperty("--person-color",member.color||"#5685d1");
+      btn.style.setProperty("--person-tint",(member.color||"#5685d1")+"20");
+      const avatar=this.el("span","tablet-person-avatar",member.avatar||"🙂");
+      btn.append(avatar,this.el("strong",null,member.name),this.el("span","small","Antippen & loslegen"));
       grid.append(btn);
     }
     if(!grid.childNodes.length)panel.append(this.el("p","small","Noch keine Familienmitglieder eingerichtet."));
     panel.append(grid);
-    panel.append(this.el("p","small","🔒 Einstellungen für Erwachsene sind nur mit dem Elternkonto zugänglich."));
+    panel.append(this.el("p","small","🔒 Erwachseneinstellungen sind mit dem Tablet-Konto nicht zugänglich. Die Farben und Symbole können Eltern im Profil bearbeiten."));
     page.append(panel);
   }
   renderWeek(page) {
@@ -857,7 +867,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       choice.value=this.childAccounts.tablet_user_id||"";
       field.append(choice);intro.append(field);
       intro.append(this.button("💾 Tablet-Zugang speichern",()=>this.request("tablet_settings_save",{user_id:choice.value}),"btn"));
-      intro.append(this.el("p","small","Danach am Tablet mit genau diesem Benutzer anmelden und den Family Hub öffnen. Zwischen Kindern kann man über „Kind wechseln“ umschalten. Für Elternfunktionen ist ein anderer Login erforderlich."));
+      intro.append(this.el("p","small","Danach am Tablet mit genau diesem Benutzer anmelden und den Family Hub öffnen. Beim Öffnen des Family Hub erscheint immer zuerst die Kinderauswahl. Über „Kind wechseln“ kommt man auch direkt zurück. Für Elternfunktionen ist eine separate Anmeldung mit einem Administrator-Konto erforderlich."));
     }
     page.append(intro);
     if(!this.childAccounts)return;
@@ -1335,16 +1345,25 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   }
   renderMembers(page) {
     const card=this.el("section","panel");card.append(this.cardTitle("Familienmitglieder"));
-    const add=this.button(this.editMember?"Bearbeitung abbrechen":"+ Familienmitglied hinzufügen",()=>{this.editMember=this.editMember?null:{name:"",color:"#3B82F6"};this.render();});card.append(add);
+    const add=this.button(this.editMember?"Bearbeitung abbrechen":"+ Familienmitglied hinzufügen",()=>{this.editMember=this.editMember?null:{name:"",color:"#3B82F6",avatar:"🙂"};this.render();});card.append(add);
     if(this.editMember){
       const f=this.el("form","formgrid");const n=this.input("Name","text",this.editMember.name,"name");n.querySelector("input").required=true;
-      const c=this.input("Farbe","color",this.editMember.color,"color");f.append(n,c);
+      const c=this.input("Farbe","color",this.editMember.color,"color");
+      const avatarLabel=this.el("label","field");
+      avatarLabel.append(this.el("span","field-title","Bild-Symbol für die Kinderauswahl"));
+      const avatarSelect=this.el("select");
+      ["🙂","👧","👦","🧒","👩","👨","👶","🦊","🐻","🐼","🐰","🦄","🐱","🐶","🌈","⭐"].forEach(symbol=>{
+        const o=this.el("option",null,symbol);o.value=symbol;avatarSelect.append(o);
+      });
+      avatarSelect.value=this.editMember.avatar||"🙂";
+      avatarLabel.append(avatarSelect);
+      f.append(n,c,avatarLabel);
       const save=this.el("div","full");const submit=this.el("button","btn","Speichern");submit.type="submit";save.append(submit);
-      f.append(save);f.addEventListener("submit",e=>{e.preventDefault();this.request("member_save",{member_id:this.editMember.id||"",name:n.querySelector("input").value,color:c.querySelector("input").value});});card.append(f);
+      f.append(save);f.addEventListener("submit",e=>{e.preventDefault();this.request("member_save",{member_id:this.editMember.id||"",name:n.querySelector("input").value,color:c.querySelector("input").value,avatar:avatarSelect.value});});card.append(f);
     }
     const list=this.el("div","list");
     this.data.members.forEach(m=>{const r=this.el("div","item");const dot=this.el("span","dot");dot.style.background=m.color;
-      const name=this.el("div","item-main item-title",m.name);r.append(dot,name);
+      const name=this.el("div","item-main item-title",`${m.avatar||"🙂"} ${m.name}`);r.append(dot,name);
       r.append(this.button("Bearbeiten",()=>{this.editMember={...m};this.render();},"btn secondary"));
       r.append(this.button("Löschen",()=>{if(confirm(`„${m.name}“ löschen? Aufgaben bleiben erhalten, aber die Zuordnung wird entfernt.`))this.request("member_delete",{member_id:m.id});},"btn secondary danger"));list.append(r);
     });

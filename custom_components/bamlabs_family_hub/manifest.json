@@ -1,7 +1,7 @@
 {
   "domain": "bamlabs_family_hub",
   "name": "BamLabs Family Hub",
-  "version": "0.3.27",
+  "version": "0.3.28",
   "documentation": "https://bamlabs.at/",
   "issue_tracker": "https://github.com/Bammerstefan/bamlabs-family-hub/issues",
   "codeowners": [

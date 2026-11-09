@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.27",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.28",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -189,7 +189,7 @@ def _visible_state(hub, connection):
         member_id = _child_member(hub, connection)
         if not member_id:
             return {"_role": "tablet_picker", "members": [
-                {"id": m["id"], "name": m["name"], "color": m["color"]}
+                {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
                 "point_entries": [], "rewards": [], "routine_checks": [], "school_plan": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
@@ -239,6 +239,28 @@ async def ws_display_settings_save(hass, connection, msg):
             "rotate_seconds": msg["rotate_seconds"]}
         await hub["store"].async_save(hub["state"])
     connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/tablet_enter"})
+@websocket_api.async_response
+async def ws_tablet_enter(hass, connection, msg):
+    """Open Family Hub: dedicated tablet account always begins at the person picker.
+
+    No administrator can impersonate a child by switching the UI; the endpoint
+    returns the administrator's normal view to existing administrator sessions.
+    """
+    hub = hass.data.get(DOMAIN)
+    if not hub:
+        connection.send_error(msg["id"], "not_ready", "Family Hub ist nicht eingerichtet")
+        return
+    user = connection.user
+    if user and user.is_active and not user.is_admin and user.id == hub["state"].get("tablet_user_id"):
+        hub.setdefault("tablet_selection", {}).pop(user.id, None)
+    result = _visible_state(hub, connection)
+    if result is None:
+        connection.send_error(msg["id"], "unauthorized", "Dieses Konto ist keinem Familienmitglied zugeordnet")
+        return
+    connection.send_result(msg["id"], result)
 
 
 @websocket_api.websocket_command({
@@ -310,6 +332,7 @@ async def ws_state(hass, connection, msg):
     vol.Optional("member_id", default=""): str,
     vol.Required("name"): str,
     vol.Required("color"): str,
+    vol.Optional("avatar", default="🙂"): str,
 })
 @websocket_api.async_response
 async def ws_member_save(hass, connection, msg):
@@ -319,6 +342,9 @@ async def ws_member_save(hass, connection, msg):
         return
     try:
         name, color = _text(msg["name"], 60), _color(msg["color"])
+        avatar = msg.get("avatar", "🙂")
+        if avatar not in ("🙂", "👧", "👦", "🧒", "👩", "👨", "👶", "🦊", "🐻", "🐼", "🐰", "🦄", "🐱", "🐶", "🌈", "⭐"):
+            raise ValueError("Bitte ein vorhandenes Profil-Symbol wählen")
     except ValueError as err:
         connection.send_error(msg["id"], "invalid_data", str(err))
         return
@@ -329,9 +355,9 @@ async def ws_member_save(hass, connection, msg):
             connection.send_error(msg["id"], "not_found", "Familienmitglied nicht gefunden")
             return
         if member:
-            member.update(name=name, color=color)
+            member.update(name=name, color=color, avatar=avatar)
         else:
-            members.append({"id": uuid4().hex, "name": name, "color": color})
+            members.append({"id": uuid4().hex, "name": name, "color": color, "avatar": avatar})
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
@@ -1614,7 +1640,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
-        ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_select, ws_tablet_settings_save, ws_display_settings_save,
+        ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_enter, ws_tablet_select, ws_tablet_settings_save, ws_display_settings_save,
         ws_child_task_create, ws_child_event_create,
     ):
         websocket_api.async_register_command(hass, command)
