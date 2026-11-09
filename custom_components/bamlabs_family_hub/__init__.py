@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}})
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.24",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.25",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -191,7 +191,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"]}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "rewards": [], "routine_checks": [], "school_plan": [],
+                "point_entries": [], "rewards": [], "routine_checks": [], "school_plan": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -205,7 +205,8 @@ def _visible_state(hub, connection):
             "point_entries": [e for e in state.get("point_entries", []) if e.get("member_id") == member_id],
             "routines": [r for r in state.get("routines", []) if member_id in r.get("member_ids", [])],
             "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id],
-            "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id]}
+            "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id],
+            "family_lists": [l for l in state.get("family_lists", []) if member_id in l.get("member_ids", [])]}
 
 
 @websocket_api.websocket_command({
@@ -1394,6 +1395,180 @@ async def ws_school_delete(hass, connection, msg):
         await hub["store"].async_save(hub["state"])
     connection.send_result(msg["id"], _visible_state(hub, connection))
 
+
+
+# Standalone family shopping and packing lists. Never depend on Meal Planner.
+_LIST_TYPES = ("shopping", "packing", "checklist")
+_LIST_ICONS = ("🛒", "🎒", "🏖️", "🏫", "🧳", "🏊", "🎉", "✅", "🧸", "🍎", "🧼", "🚗", "🐶", "⚽", "🎨")
+
+
+def _list_visible_to_member(item, member_id):
+    return member_id in item.get("member_ids", [])
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/list_save",
+    vol.Optional("list_id", default=""): str,
+    vol.Required("title"): str,
+    vol.Required("list_type"): vol.In(_LIST_TYPES),
+    vol.Required("icon"): vol.In(_LIST_ICONS),
+    vol.Required("member_ids"): [str],
+})
+@websocket_api.async_response
+async def ws_list_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Listen verwalten")
+        return
+    try:
+        title = _text(msg["title"], 80)
+        ids = list(dict.fromkeys(msg["member_ids"]))
+        if not set(ids).issubset({m["id"] for m in hub["state"]["members"]}):
+            raise ValueError("Ungültige Familienmitglieder")
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        entries = hub["state"].setdefault("family_lists", [])
+        current = next((e for e in entries if e.get("id") == msg["list_id"]), None) if msg["list_id"] else None
+        if msg["list_id"] and current is None:
+            connection.send_error(msg["id"], "not_found", "Liste nicht gefunden")
+            return
+        values = {"title": title, "list_type": msg["list_type"], "icon": msg["icon"], "member_ids": ids}
+        if current:
+            current.update(values)
+        else:
+            entries.append({"id": uuid4().hex, "items": [], **values})
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/list_item_add",
+    vol.Required("list_id"): str,
+    vol.Required("title"): str,
+    vol.Optional("icon", default="✅"): vol.In(_LIST_ICONS),
+})
+@websocket_api.async_response
+async def ws_list_item_add(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern können Einträge erstellen")
+        return
+    try:
+        title = _text(msg["title"], 100)
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        entry = next((e for e in hub["state"].setdefault("family_lists", []) if e.get("id") == msg["list_id"]), None)
+        if not entry:
+            connection.send_error(msg["id"], "not_found", "Liste nicht gefunden")
+            return
+        if len(entry["items"]) >= 100:
+            connection.send_error(msg["id"], "limit", "Maximal 100 Einträge pro Liste")
+            return
+        entry["items"].append({"id": uuid4().hex, "title": title, "icon": msg["icon"], "done": False})
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/list_item_toggle",
+    vol.Required("list_id"): str,
+    vol.Required("item_id"): str,
+})
+@websocket_api.async_response
+async def ws_list_item_toggle(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub:
+        connection.send_error(msg["id"], "not_ready", "Family Hub nicht bereit")
+        return
+    admin = _owner(connection)
+    member = _child_member(hub, connection) if not admin else None
+    if not admin and not member:
+        connection.send_error(msg["id"], "unauthorized", "Kein Zugriff")
+        return
+    async with hub["lock"]:
+        entry = next((e for e in hub["state"].setdefault("family_lists", []) if e.get("id") == msg["list_id"]), None)
+        if not entry or (not admin and not _list_visible_to_member(entry, member)):
+            connection.send_error(msg["id"], "unauthorized", "Liste nicht freigegeben")
+            return
+        item = next((i for i in entry["items"] if i.get("id") == msg["item_id"]), None)
+        if item is None:
+            connection.send_error(msg["id"], "not_found", "Eintrag nicht gefunden")
+            return
+        item["done"] = not item.get("done", False)
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/list_item_delete",
+    vol.Required("list_id"): str,
+    vol.Required("item_id"): str,
+})
+@websocket_api.async_response
+async def ws_list_item_delete(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    async with hub["lock"]:
+        entry = next((e for e in hub["state"].setdefault("family_lists", []) if e.get("id") == msg["list_id"]), None)
+        if not entry:
+            connection.send_error(msg["id"], "not_found", "Liste nicht gefunden")
+            return
+        before = len(entry["items"])
+        entry["items"] = [i for i in entry["items"] if i.get("id") != msg["item_id"]]
+        if before == len(entry["items"]):
+            connection.send_error(msg["id"], "not_found", "Eintrag nicht gefunden")
+            return
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/list_reset",
+    vol.Required("list_id"): str,
+})
+@websocket_api.async_response
+async def ws_list_reset(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    async with hub["lock"]:
+        entry = next((e for e in hub["state"].setdefault("family_lists", []) if e.get("id") == msg["list_id"]), None)
+        if not entry:
+            connection.send_error(msg["id"], "not_found", "Liste nicht gefunden")
+            return
+        for item in entry["items"]:
+            item["done"] = False
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/list_delete",
+    vol.Required("list_id"): str,
+})
+@websocket_api.async_response
+async def ws_list_delete(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    async with hub["lock"]:
+        entries = hub["state"].setdefault("family_lists", [])
+        updated = [e for e in entries if e.get("id") != msg["list_id"]]
+        if len(entries) == len(updated):
+            connection.send_error(msg["id"], "not_found", "Liste nicht gefunden")
+            return
+        hub["state"]["family_lists"] = updated
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
@@ -1403,6 +1578,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_save, ws_school_delete,
+        ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
