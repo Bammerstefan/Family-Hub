@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.25";
+const FAMILY_HUB_UI_VERSION = "0.3.26";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -34,6 +34,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.showCalendarSetup = false;
     this.pushDevices = [];
     this.pushDevicesLoaded = false;
+    this.pushSettingsOpen = false;
     this.taskFilter = "";
     this.backendVersion = "";
     this.savedNotice = "";
@@ -200,6 +201,15 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       .tablet-picker-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:16px;margin:20px 0}.tablet-person{border:2px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);color:var(--primary-text-color,#192238);border-radius:22px;min-height:170px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font-size:21px;font-weight:800;cursor:pointer}.tablet-person-avatar{height:86px;width:86px;border-radius:50%;color:#fff;display:grid;place-items:center;font-size:35px;font-weight:900}.tablet-person:focus-visible{outline:4px solid #1464db;outline-offset:3px}
       @media(max-width:700px){.routine-grid{grid-template-columns:1fr}.routine-step-edit{grid-template-columns:85px 1fr}.routine-step-edit button{grid-column:1/-1}.routine-step-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.routine-step{min-height:104px}}
 
+      /* Clearly separated mobile reminder settings for large families. */
+      .push-toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;padding:16px 18px;border:1px solid var(--divider-color,#dfe5ee);border-radius:16px;background:var(--secondary-background-color,#eef1f6);color:var(--primary-text-color,#192238);font-weight:800;font-size:17px;min-height:58px}
+      .push-toggle:focus-visible{outline:3px solid #2485dd;outline-offset:2px}
+      .push-person-list{display:grid;gap:16px;margin:20px 0}
+      .push-person-card{border:1px solid var(--divider-color,#dfe5ee);border-left:6px solid var(--person-accent,#6b90d6);border-radius:17px;padding:18px;background:var(--card-background-color,#fff);display:grid;gap:12px}
+      .push-person-heading{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:850;border-bottom:1px solid var(--divider-color,#dfe5ee);padding-bottom:12px}
+      .push-person-avatar{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;background:var(--person-accent,#6b90d6);color:white;font-size:17px;font-weight:800}
+      .push-person-card .field{margin:0}.push-person-card .person-choice{margin:0}.push-person-actions{border-top:1px solid var(--divider-color,#dfe5ee);padding-top:13px;display:flex;gap:10px}
+      .push-person-actions .btn{min-height:46px}
       /* Family tablet: show all activities grouped by person, never mixed between children. */
       .routine-person-list{display:grid;gap:24px}
       .routine-person-group{border-radius:22px;overflow:hidden;border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff)}
@@ -682,7 +692,12 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     buttons.append(this.button("🔔 Test-Erinnerung",async()=>{try{const result=await this._hass.callWS({type:"bamlabs_family_hub/reminder_test"});this.error=result.sent?`Test-Benachrichtigung wurde in Home Assistant erstellt (${result.count} fällige Aufgaben). Öffne Home Assistant → Benachrichtigungen (Glocke). Dies ist keine Handy-Push-Nachricht.`:"Test konnte keine Benachrichtigung erstellen.";}catch(e){this.error=e.message||String(e);}this.render();},"btn secondary"));
     remind.append(buttons);intro.append(remind);
     const push=this.el("section","panel");
-    push.append(this.el("h3",null,"📲 Erinnerungen aufs Handy"));
+    const pushToggle=this.button("",()=>{this.pushSettingsOpen=!this.pushSettingsOpen;this.render();},"push-toggle");
+    pushToggle.setAttribute("aria-expanded",String(this.pushSettingsOpen));
+    pushToggle.setAttribute("aria-label",this.pushSettingsOpen?"Erinnerungen aufs Handy zuklappen":"Erinnerungen aufs Handy aufklappen");
+    pushToggle.append(this.el("span",null,"📲 Erinnerungen aufs Handy"),this.el("span",null,this.pushSettingsOpen?"▲ Zuklappen":"▼ Aufklappen"));
+    push.append(pushToggle);
+    if(this.pushSettingsOpen){
     push.append(this.el("p","small","Nur mit der offiziellen Home-Assistant-Handy-App. Jeder Person ein Handy zuordnen; dann werden ausschließlich ihre eigenen fälligen Aufgaben geschickt. Standardmäßig ausgeschaltet. Wähle die Uhrzeit für jede Person. Automatische Nachrichten kommen nur bei offenen heute fälligen oder überfälligen Aufgaben; nach einem Neustart auch dann, wenn die Erinnerungszeit schon vorbei ist. Bei älteren Handy-Diensten öffnet das Tippen auf die Push-Nachricht direkt den Family Hub."));
     const ps=this.data.push_settings||{enabled:false,devices:{}};
     const pushEnabled=this.el("input");pushEnabled.type="checkbox";pushEnabled.checked=!!ps.enabled;
@@ -692,7 +707,13 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const deviceInputs={};
     const hourInputs={};
     const overdueInputs={};
+    const people=this.el("div","push-person-list");
     for(const m of this.data.members){
+      const person=this.el("section","push-person-card");
+      person.style.setProperty("--person-accent",/^#[0-9a-fA-F]{6}$/.test(m.color||"")?m.color:"#6b90d6");
+      const heading=this.el("div","push-person-heading");
+      const avatar=this.el("span","push-person-avatar",(m.name||"?").slice(0,1).toUpperCase());
+      heading.append(avatar,this.el("span",null,m.name));person.append(heading);
       const field=this.el("label","field");field.append(this.el("span","field-title",`Handy für ${m.name}`));
       const sel=this.el("select");const none=this.el("option",null,"Kein Handy ausgewählt");none.value="";sel.append(none);
       for(const dev of this.pushDevices){const opt=this.el("option",null,dev.name);opt.value=dev.id;sel.append(opt);}
@@ -709,9 +730,12 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const late=this.el("input");late.type="checkbox";late.checked=(ps.include_overdue||{})[m.id]??(settings.include_overdue!==false);
       overdueInputs[m.id]=late;
       const lateRow=this.el("label","person-choice");lateRow.append(late,this.el("span",null,`Auch überfällige Aufgaben für ${m.name} melden`));
-      push.append(field,timing,lateRow);
-      const line=this.el("div","actions");line.append(this.button("🔔 Test ans Handy",()=>this.testPush(m.id,sel.value),"btn secondary"));push.append(line);
+      person.append(field,timing,lateRow);
+      const line=this.el("div","push-person-actions");
+      line.append(this.button(`🔔 Test an ${m.name}s Handy`,()=>this.testPush(m.id,sel.value),"btn secondary"));
+      person.append(line);people.append(person);
     }
+    push.append(people);
     const pushActions=this.el("div","actions");
     pushActions.append(this.button("✓ Handy-Zuordnung speichern",()=>this.request("push_settings_save",{enabled:pushEnabled.checked,
       devices:Object.fromEntries(Object.entries(deviceInputs).map(([k,v])=>[k,v.value])),
@@ -719,7 +743,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       include_overdue:Object.fromEntries(Object.entries(overdueInputs).map(([k,v])=>[k,v.checked]))}),"btn"));
     pushActions.append(this.button("🔄 Handys suchen",()=>this.loadPushDevices(),"btn secondary"));
     pushActions.append(this.button("🔎 Erinnerungen prüfen",()=>this.diagnosePush(),"btn secondary"));
-    push.append(pushActions);intro.append(push);
+    push.append(pushActions);
+    }
+    intro.append(push);
 
     intro.append(this.el("h3",null,"📱 Kinder & Handy-Zugang"));
     intro.append(this.el("p","small","Jedes Kind bekommt einen persönlichen QR-Code. Der Code öffnet Family Hub auf dem Handy – ohne Passwort im QR-Code. Zur Anmeldung benötigt das Kind einmalig ein eigenes Home-Assistant-Konto ohne Administratorrechte."));

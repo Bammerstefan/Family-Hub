@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.25",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.26",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
