@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30})}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}})
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.31",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.32",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -179,11 +179,26 @@ def _all_done(task):
     return all(_done_for(task, mid) for mid in assigned) if assigned else bool(task.get("done"))
 
 
+def _challenge_progress(state):
+    """Aggregate task completions and checked routine steps in the local current week."""
+    today = dt_util.now().date()
+    start = (today - timedelta(days=today.weekday())).isoformat()
+    finish = (today + timedelta(days=6-today.weekday())).isoformat()
+    tasks = sum(1 for e in state.get("task_completions", []) if start <= e.get("date", "") <= finish)
+    steps = sum(1 for e in state.get("routine_checks", []) if start <= e.get("date", "") <= finish)
+    cfg = state.get("family_challenge", {})
+    goal = cfg.get("goal", 30)
+    goal = goal if isinstance(goal, int) and not isinstance(goal, bool) and 1 <= goal <= 500 else 30
+    return {"enabled": cfg.get("enabled") is True, "goal": goal,
+            "tasks": tasks, "steps": steps, "count": tasks + steps,
+            "week_start": start, "week_end": finish}
+
+
 def _visible_state(hub, connection):
     """Never give a child's account other people's tasks, events or calendar sources."""
     state = hub["state"]
     if _owner(connection):
-        return {**state, "_role": "admin"}
+        return {**state, "_challenge_progress": _challenge_progress(state), "_role": "admin"}
     user = connection.user
     if user and user.is_active and user.id == state.get("tablet_user_id"):
         member_id = _child_member(hub, connection)
@@ -196,7 +211,7 @@ def _visible_state(hub, connection):
     member_id = _child_member(hub, connection)
     if not member_id:
         return None
-    return {"_role": "child", "_tablet_mode": bool(user and user.id == state.get("tablet_user_id")), "_member_id": member_id,
+    return {"_challenge_progress": _challenge_progress(state), "_role": "child", "_tablet_mode": bool(user and user.id == state.get("tablet_user_id")), "_member_id": member_id,
             "members": [m for m in state["members"] if m["id"] == member_id],
             "tasks": [{**t, "done": _done_for(t, member_id)} for t in state["tasks"] if member_id in t.get("assignees", [])],
             "events": [e for e in state["events"] if member_id in e.get("members", [])],
@@ -1639,6 +1654,23 @@ async def ws_list_delete(hass, connection, msg):
         await hub["store"].async_save(hub["state"])
     connection.send_result(msg["id"], _visible_state(hub, connection))
 
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/challenge_settings_save",
+    vol.Required("enabled"): bool,
+    vol.Required("goal"): vol.All(vol.Coerce(int), vol.Range(min=1, max=500)),
+})
+@websocket_api.async_response
+async def ws_challenge_settings_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen das Familienziel ändern")
+        return
+    async with hub["lock"]:
+        hub["state"]["family_challenge"] = {"enabled": msg["enabled"], "goal": msg["goal"]}
+        await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
@@ -1653,7 +1685,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
         ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_enter, ws_tablet_select, ws_tablet_settings_save, ws_display_settings_save,
-        ws_child_task_create, ws_child_event_create,
+        ws_child_task_create, ws_child_event_create, ws_challenge_settings_save,
     ):
         websocket_api.async_register_command(hass, command)
     hub_data["commands_registered"] = True
