@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.26";
+const FAMILY_HUB_UI_VERSION = "0.3.27";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -38,10 +38,33 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.taskFilter = "";
     this.backendVersion = "";
     this.savedNotice = "";
+    this.displayMode = false;
+    this.displaySlide = 0;
+    this.displaySettingsOpen = false;
+    this._displayInterval = null;
+    this._lastSlide = Date.now();
   }
   connectedCallback() {
     // Refresh visible calendar data regularly while this panel is mounted.
     // Home Assistant's Google integration remains responsible for Google polling.
+    if (!this._displayInterval) {
+      this._displayInterval = setInterval(() => {
+        if(!this.isConnected || !this.loaded || !this.displayMode)return;
+        const settings=this.data.display_settings||{};
+        const seconds=settings.rotate_seconds||30;
+        if(Date.now()-this._lastSlide>=seconds*1000) {
+          this.displaySlide+=1;
+          this._lastSlide=Date.now();
+          this.render();
+        } else {
+          const clock=this.shadowRoot.querySelector(".display-time");
+          const date=this.shadowRoot.querySelector(".display-date");
+          const now=new Date();
+          if(clock)clock.textContent=now.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"});
+          if(date)date.textContent=now.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+        }
+      }, 10000);
+    }
     if (!this._syncInterval) {
       this._syncInterval = setInterval(() => {
         if (this.isConnected && this.loaded && this._hass) this.refreshExternalEvents(true);
@@ -49,6 +72,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     }
   }
   disconnectedCallback() {
+    if (this._displayInterval) clearInterval(this._displayInterval);
+    this._displayInterval=null;
     if (this._syncInterval) clearInterval(this._syncInterval);
     this._syncInterval = null;
   }
@@ -94,7 +119,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",event_save:"Termin",reward_save:"Belohnung"};
+      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",event_save:"Termin",reward_save:"Belohnung"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -231,6 +256,21 @@ class BamLabsFamilyHubPanel extends HTMLElement {
 
       .school-person{margin:18px 0;padding:14px;border:1px solid var(--divider-color,#dfe5ee);border-radius:19px}.school-person-head{display:flex;align-items:center;gap:12px;padding:8px 12px;margin-bottom:12px;border-radius:12px;background:var(--secondary-background-color,#eef1f6);font-size:20px}.school-avatar{display:grid;place-items:center;color:white;width:40px;height:40px;border-radius:50%;font-weight:850}.school-week{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.school-day{background:var(--secondary-background-color,#eef1f6);border-radius:16px;padding:12px;min-width:0}.school-day h3{margin:0 0 12px}.school-day-now{outline:3px solid #7ccfb5}.school-entry{display:flex;align-items:center;gap:10px;padding:12px;margin:8px 0;border:1px solid var(--divider-color,#dfe5ee);border-radius:14px;background:var(--card-background-color,#fff);font-size:15px;overflow-wrap:anywhere}.school-entry-icon{font-size:28px}.school-entry-info{display:grid;gap:4px;flex:1;min-width:0}.school-entry .btn{padding:8px;min-width:38px}.school-section .field{min-width:0}
       .family-list-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.family-list-card{border:1px solid var(--divider-color,#dfe5ee);border-radius:20px;padding:18px;background:var(--card-background-color,#fff);min-width:0}.family-list-title{font-size:21px;font-weight:800}.family-list-row{display:flex;align-items:center;gap:12px;border-radius:14px;padding:12px;margin-top:9px;border:1px solid var(--divider-color,#dfe5ee);background:var(--secondary-background-color,#f3f6fa)}.family-list-row input{width:27px;height:27px;flex-shrink:0;accent-color:#21a879}.family-list-row span{font-size:16px;font-weight:650;overflow-wrap:anywhere}.family-list-muted{opacity:.55;text-decoration:line-through}.family-list-actions{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px}.family-list-progress{height:12px;border-radius:20px;background:var(--secondary-background-color,#ecf0f5);overflow:hidden;margin:12px 0}.family-list-progress div{height:100%;background:#30b790;border-radius:20px}.family-list-type{font-size:13px;color:var(--secondary-text-color,#697386)}@media(max-width:780px){.family-list-grid{grid-template-columns:1fr}}
+
+      .display-launch{background:linear-gradient(120deg,#6d54c9,#2775bc);border-color:transparent;min-height:44px}
+      .display-wrap{position:relative;min-height:min(76vh,780px);border-radius:30px;overflow:hidden;color:#fff;background:linear-gradient(125deg,#183455,#624680 70%,#d0797e);display:flex;flex-direction:column;padding:clamp(20px,4vw,50px);gap:20px}
+      .display-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:brightness(.43)}
+      .display-shade{position:absolute;inset:0;background:linear-gradient(90deg,#0b2143cc,#18253a40)}
+      .display-main{position:relative;display:grid;gap:16px;align-content:center;flex:1;z-index:1}
+      .display-time{font-size:clamp(68px,12vw,150px);font-weight:900;line-height:1;letter-spacing:-4px;color:#fff}
+      .display-date{font-size:clamp(18px,3vw,31px);font-weight:750;color:#fff}
+      .display-next{display:grid;gap:10px;background:#0f244c9c;padding:20px;border-radius:20px;max-width:610px}
+      .display-next-item{font-size:clamp(16px,2vw,22px);display:flex;justify-content:space-between;gap:12px}
+      .display-controls{z-index:2;display:flex;justify-content:flex-end}.display-exit{background:#ffffff;color:#233452;border:0;border-radius:16px;min-height:48px;padding:12px 18px;font-weight:800}
+      .display-intro{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+      .display-setting-card{border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;padding:18px;margin-top:14px}
+      @media(min-width:900px){.page{max-width:1450px}.hero-card{min-height:150px}.big-link{min-height:150px}}
+      @media(max-width:650px){.display-wrap{min-height:70vh;padding:18px}.display-time{letter-spacing:-2px}}
       @media(max-width:950px){.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.member-card-grid,.focus-grid{grid-template-columns:1fr}}@media(max-width:850px){.week-days{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:450px){.week-days{grid-template-columns:1fr}}@media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:1fr}.member-card-grid,.focus-grid{grid-template-columns:1fr}.kid-big-title{font-size:24px}}`;
     root.append(style);
     const page=this.el("main","page");
@@ -248,6 +288,11 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(this.backendVersion && this.backendVersion!==FAMILY_HUB_UI_VERSION && this.backendVersion!=="nicht abrufbar") {
       page.append(this.el("div","notice",`Oberfläche und Backend haben verschiedene Versionen (${versionText}). Bitte das Update im Marketplace installieren, Home Assistant neu starten und dann Aktualisieren drücken.`));
     }
+    if(this.loaded && this.displayMode) {
+      this.renderDisplay(page);
+      root.append(page);
+      return;
+    }
     if(this.loaded && this.data._role === "tablet_picker") {
       this.renderTabletPicker(page);
       root.append(page);
@@ -257,6 +302,11 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const switchBar=this.el("div","actions");
       switchBar.append(this.button("👧 Kind wechseln",()=>this.selectTabletMember(""),"btn secondary"));
       page.append(switchBar);
+    }
+    if(this.loaded && this.data._role !== "tablet_picker" && this.data.display_settings?.enabled) {
+      const displayActions=this.el("div","actions");
+      displayActions.append(this.button("🖼️ Bildschirmmodus",()=>{this.displayMode=true;this._lastSlide=Date.now();this.render();},"btn display-launch"));
+      page.append(displayActions);
     }
     const nav=this.el("nav","nav");
     const child = this.data._role === "child";
@@ -636,10 +686,54 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     } catch(e){this.error=e.message||String(e);}
     this.render();
   }
+  renderDisplay(page) {
+    const settings=this.data.display_settings||{};
+    const photos=(settings.photos||[]).filter(p=>/^\/local\/[a-zA-Z0-9_\-/%.]+\.(jpg|jpeg|png|webp)$/i.test(p)&&!p.includes(".."));
+    const wrap=this.el("section","display-wrap");
+    if(photos.length){
+      const img=this.el("img","display-photo");img.src=photos[this.displaySlide%photos.length];img.alt="Familienfoto";
+      img.addEventListener("error",()=>{img.style.display="none";});wrap.append(img);
+    }
+    wrap.append(this.el("div","display-shade"));
+    const controls=this.el("div","display-controls");
+    controls.append(this.button("✕ Schließen",()=>{this.displayMode=false;this.render();},"display-exit"));wrap.append(controls);
+    const inner=this.el("div","display-main");const now=new Date();
+    inner.append(this.el("div","display-time",now.toLocaleTimeString("de-AT",{hour:"2-digit",minute:"2-digit"})));
+    inner.append(this.el("div","display-date",now.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long",year:"numeric"})));
+    const agenda=this.el("div","display-next");agenda.append(this.el("strong",null,"📅 Als Nächstes"));
+    const today=this.isoDate(now),until=this.isoDate(this.addDays(now,6));
+    const upcoming=this.occurrences(today,until).filter(o=>o.end>=today).slice(0,4);
+    if(upcoming.length)upcoming.forEach(o=>{
+      const line=this.el("div","display-next-item");
+      line.append(this.el("span",null,o.event.title),this.el("span",null,`${this.dateLabel(o.start)}${o.time?" · "+o.time:""}`));
+      agenda.append(line);
+    });
+    else agenda.append(this.el("div",null,"🌈 Heute ist Zeit für euch!"));
+    inner.append(agenda);wrap.append(inner);page.append(wrap);
+  }
   renderSettings(page) {
     const intro=this.el("section","panel");
     intro.append(this.cardTitle("⚙️ Einstellungen"));
     intro.append(this.el("p",null,"Hier verbindest du Kalender und richtest den Handy-Zugang für Kinder ein."));
+    const display=this.el("section","display-setting-card");
+    display.append(this.cardTitle("🖼️ Bildschirmmodus fürs Tablet"));
+    display.append(this.el("p","small","Große Uhr und kommende Termine. Optional Familienfotos aus dem Home-Assistant-Ordner /config/www/. Der Bildschirmmodus startet nur, wenn du ihn antippst."));
+    display.append(this.button(this.displaySettingsOpen?"▴ Schließen":"▾ Bildschirmmodus einstellen",()=>{this.displaySettingsOpen=!this.displaySettingsOpen;this.render();},"btn secondary"));
+    if(this.displaySettingsOpen) {
+      const settings=this.data.display_settings||{enabled:false,photos:[],rotate_seconds:30};
+      const line=this.el("label","person-choice");
+      const enabled=this.el("input");enabled.type="checkbox";enabled.checked=!!settings.enabled;
+      line.append(enabled,this.el("span",null,"Bildschirmmodus anbieten"));display.append(line);
+      const photos=this.el("label","field");photos.append(this.el("span","field-title","Familienfotos – ein lokaler Bildpfad pro Zeile"));
+      const textarea=this.el("textarea");textarea.rows=5;textarea.placeholder="/local/familie/foto1.jpg\n/local/familie/foto2.jpg";textarea.value=(settings.photos||[]).join("\n");photos.append(textarea);display.append(photos);
+      const interval=this.el("label","field");interval.append(this.el("span","field-title","Bildwechsel"));
+      const select=this.el("select");[15,30,60].forEach(v=>{const option=this.el("option",null,`${v} Sekunden`);option.value=String(v);select.append(option);});
+      select.value=String(settings.rotate_seconds||30);interval.append(select);display.append(interval);
+      display.append(this.el("p","small","Bilder kommen in /config/www/familie/ und werden als /local/familie/datei.jpg eingetragen. Nur Fotos verwenden, die allen Nutzern des Family Hub gezeigt werden dürfen."));
+      display.append(this.button("✓ Bildschirmmodus speichern",()=>this.request("display_settings_save",{enabled:enabled.checked,photos:textarea.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean),rotate_seconds:Number(select.value)}),"btn"));
+    }
+    intro.append(display);
+
     intro.append(this.el("h3",null,"📅 Home-Assistant-Kalender einblenden"));
     intro.append(this.el("p","small","Du kannst Kalender anzeigen, die schon mit Home Assistant verbunden sind. Termine werden anschließend automatisch aktualisiert, solange Family Hub geöffnet ist."));
     intro.append(this.button(this.showCalendarSetup?"▴ Kalender-Einstellungen schließen":"⚙️ Kalender auswählen und zuordnen",()=>{this.showCalendarSetup=!this.showCalendarSetup;this.render();if(this.showCalendarSetup)this.loadCalendarSources();},"btn"));

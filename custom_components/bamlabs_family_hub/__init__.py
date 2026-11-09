@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30})}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}})
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.26",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.27",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -206,7 +206,39 @@ def _visible_state(hub, connection):
             "routines": [r for r in state.get("routines", []) if member_id in r.get("member_ids", [])],
             "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id],
             "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id],
+            "display_settings": state.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}),
             "family_lists": [l for l in state.get("family_lists", []) if member_id in l.get("member_ids", [])]}
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/display_settings_save",
+    vol.Required("enabled"): bool,
+    vol.Required("photos"): [str],
+    vol.Required("rotate_seconds"): vol.In([15, 30, 60]),
+})
+@websocket_api.async_response
+async def ws_display_settings_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen den Bildschirmmodus einstellen")
+        return
+    photos = msg["photos"]
+    if len(photos) > 12 or any(
+        len(path) > 240
+        or not path.startswith("/local/")
+        or path.startswith("/local//")
+        or ".." in path
+        or "?" in path or "#" in path or "\\" in path
+        or not path.lower().endswith((".jpg", ".jpeg", ".png", ".webp"))
+        for path in photos
+    ):
+        connection.send_error(msg["id"], "invalid_data", "Nur lokale Bildpfade wie /local/familie/foto.jpg sind erlaubt (maximal 12 Bilder)")
+        return
+    async with hub["lock"]:
+        hub["state"]["display_settings"] = {"enabled": msg["enabled"], "photos": photos,
+            "rotate_seconds": msg["rotate_seconds"]}
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
 @websocket_api.websocket_command({
@@ -1582,7 +1614,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
-        ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_select, ws_tablet_settings_save,
+        ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_select, ws_tablet_settings_save, ws_display_settings_save,
         ws_child_task_create, ws_child_event_create,
     ):
         websocket_api.async_register_command(hass, command)
