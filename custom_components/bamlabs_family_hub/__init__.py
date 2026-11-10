@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}})
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.32",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.33",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -189,9 +189,18 @@ def _challenge_progress(state):
     cfg = state.get("family_challenge", {})
     goal = cfg.get("goal", 30)
     goal = goal if isinstance(goal, int) and not isinstance(goal, bool) and 1 <= goal <= 500 else 30
-    return {"enabled": cfg.get("enabled") is True, "goal": goal,
+    claims = state.get("family_reward_claims", [])
+    claimed = any(e.get("week_start") == start for e in claims if isinstance(e, dict))
+    reward_title = str(cfg.get("reward_title") or "").strip()[:100]
+    reward_emoji = str(cfg.get("reward_emoji") or "🎁").strip()[:8] or "🎁"
+    enabled = cfg.get("enabled") is True
+    return {"enabled": enabled, "goal": goal,
             "tasks": tasks, "steps": steps, "count": tasks + steps,
-            "week_start": start, "week_end": finish}
+            "week_start": start, "week_end": finish,
+            "reward_title": reward_title if enabled else "",
+            "reward_emoji": reward_emoji,
+            "reward_unlocked": enabled and tasks + steps >= goal,
+            "reward_claimed": claimed}
 
 
 def _visible_state(hub, connection):
@@ -1658,6 +1667,8 @@ async def ws_list_delete(hass, connection, msg):
     vol.Required("type"): f"{DOMAIN}/challenge_settings_save",
     vol.Required("enabled"): bool,
     vol.Required("goal"): vol.All(vol.Coerce(int), vol.Range(min=1, max=500)),
+    vol.Optional("reward_title", default=""): vol.All(str, vol.Length(max=100)),
+    vol.Optional("reward_emoji", default="🎁"): vol.All(str, vol.Length(max=8)),
 })
 @websocket_api.async_response
 async def ws_challenge_settings_save(hass, connection, msg):
@@ -1666,8 +1677,38 @@ async def ws_challenge_settings_save(hass, connection, msg):
         connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen das Familienziel ändern")
         return
     async with hub["lock"]:
-        hub["state"]["family_challenge"] = {"enabled": msg["enabled"], "goal": msg["goal"]}
+        hub["state"]["family_challenge"] = {"enabled": msg["enabled"], "goal": msg["goal"], "reward_title": msg["reward_title"].strip(), "reward_emoji": msg["reward_emoji"].strip() or "🎁"}
         await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/family_reward_claim",
+})
+@websocket_api.async_response
+async def ws_family_reward_claim(hass, connection, msg):
+    """Parents acknowledge the shared reward once per calendar week."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen die Familienbelohnung einlösen")
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        progress = _challenge_progress(state)
+        if not progress["reward_unlocked"] or not progress["reward_title"]:
+            connection.send_error(msg["id"], "not_ready", "Familienbelohnung ist noch nicht freigeschaltet")
+            return
+        if progress["reward_claimed"]:
+            connection.send_error(msg["id"], "already_claimed", "Diese Wochenbelohnung wurde bereits eingelöst")
+            return
+        state.setdefault("family_reward_claims", []).append({
+            "week_start": progress["week_start"],
+            "reward_title": progress["reward_title"],
+            "reward_emoji": progress["reward_emoji"],
+            "claimed_at": dt_util.now().isoformat(),
+        })
+        await hub["store"].async_save(state)
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
@@ -1685,7 +1726,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
         ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_enter, ws_tablet_select, ws_tablet_settings_save, ws_display_settings_save,
-        ws_child_task_create, ws_child_event_create, ws_challenge_settings_save,
+        ws_child_task_create, ws_child_event_create, ws_challenge_settings_save, ws_family_reward_claim,
     ):
         websocket_api.async_register_command(hass, command)
     hub_data["commands_registered"] = True
