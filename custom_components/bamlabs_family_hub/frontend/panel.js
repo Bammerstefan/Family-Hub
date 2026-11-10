@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.37";
+const FAMILY_HUB_UI_VERSION = "0.3.38";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -346,7 +346,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     });page.append(nav);
     if(this.savedNotice) page.append(this.el("div","save-success",this.savedNotice));
     if(this.error) page.append(this.el("div","notice",`Hinweis: ${this.error}`));
-    const contentAnchor=this.el("div","hub-content-start");page.append(contentAnchor);
+    // Admin: content follows the navigation directly. Children have a separate
+    // welcome/shortcut card, so their scroll target is inserted after that card.
+    if(!child) page.append(this.el("div","hub-content-start"));
     if(!this.loaded) {page.append(this.el("div","panel",this.busy?"Daten werden geladen …":"Keine Verbindung zu Family Hub. Bitte Integration prüfen."));root.append(page);return;}
     if(child){
       this.renderChild(page);
@@ -1340,6 +1342,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     welcome.append(quick);
     if(overdue) welcome.append(this.el("p", "notice", `⏰ Achtung: ${overdue} ${overdue===1?"Aufgabe ist":"Aufgaben sind"} schon überfällig.`));
     page.append(welcome);
+    // Place the children's target immediately before the actual selected view.
+    // Keeping it after the large welcome card avoids landing on the shortcuts.
+    page.append(this.el("div","hub-content-start"));
 
     if(this.tab === "meals") this.renderMealWeek(page);
     if(this.tab === "success") this.renderChildSuccess(page);
