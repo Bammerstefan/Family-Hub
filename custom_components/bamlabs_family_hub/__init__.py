@@ -95,7 +95,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
-    hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}})
+    hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
 
     # Register websocket commands when the config entry loads, rather than
     # relying exclusively on async_setup. This also fixes updates where the
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.33",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.34",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -203,11 +203,18 @@ def _challenge_progress(state):
             "reward_claimed": claimed}
 
 
+def _meal_planner_installed(hub):
+    """Only show meal navigation when the separately installed integration is loaded."""
+    hass = hub.get("hass")
+    meal = hass.data.get("meal_planner") if hass else None
+    return isinstance(meal, dict) and isinstance(meal.get("data"), dict)
+
+
 def _visible_state(hub, connection):
     """Never give a child's account other people's tasks, events or calendar sources."""
     state = hub["state"]
     if _owner(connection):
-        return {**state, "_challenge_progress": _challenge_progress(state), "_role": "admin"}
+        return {**state, "_meal_planner_available": _meal_planner_installed(hub), "_challenge_progress": _challenge_progress(state), "_role": "admin"}
     user = connection.user
     if user and user.is_active and user.id == state.get("tablet_user_id"):
         member_id = _child_member(hub, connection)
@@ -220,7 +227,7 @@ def _visible_state(hub, connection):
     member_id = _child_member(hub, connection)
     if not member_id:
         return None
-    return {"_challenge_progress": _challenge_progress(state), "_role": "child", "_tablet_mode": bool(user and user.id == state.get("tablet_user_id")), "_member_id": member_id,
+    return {"_meal_planner_available": _meal_planner_installed(hub), "_challenge_progress": _challenge_progress(state), "_role": "child", "_tablet_mode": bool(user and user.id == state.get("tablet_user_id")), "_member_id": member_id,
             "members": [m for m in state["members"] if m["id"] == member_id],
             "tasks": [{**t, "done": _done_for(t, member_id)} for t in state["tasks"] if member_id in t.get("assignees", [])],
             "events": [e for e in state["events"] if member_id in e.get("members", [])],
@@ -1712,6 +1719,62 @@ async def ws_family_reward_claim(hass, connection, msg):
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/meal_week",
+    vol.Optional("week_start", default=""): str,
+})
+@websocket_api.async_response
+async def ws_meal_week(hass, connection, msg):
+    """Optional read-only meal list. Never expose full Meal Planner storage to a child."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or _visible_state(hub, connection) is None:
+        connection.send_error(msg["id"], "unauthorized", "Kein Zugriff auf Family Hub")
+        return
+    planner = hass.data.get("meal_planner")
+    if not isinstance(planner, dict) or not isinstance(planner.get("data"), dict):
+        connection.send_result(msg["id"], {"installed": False, "days": []})
+        return
+    # Do not use Meal Planner's administrator-only get API: this endpoint
+    # intentionally exposes ONLY seven dates, two names and optional symbols.
+    start = dt_util.now().date()
+    if msg["week_start"]:
+        try:
+            start = date.fromisoformat(msg["week_start"])
+        except ValueError:
+            connection.send_error(msg["id"], "invalid_date", "Ungültige Kalenderwoche")
+            return
+    today = dt_util.now().date()
+    if abs((start - today).days) > 370:
+        connection.send_error(msg["id"], "invalid_date", "Woche außerhalb des erlaubten Bereichs")
+        return
+    start -= timedelta(days=start.weekday())
+    data = planner["data"]
+    plans = data.get("plans") if isinstance(data.get("plans"), dict) else {}
+    recipes = data.get("recipes") if isinstance(data.get("recipes"), list) else []
+    by_id = {str(r.get("id")): r for r in recipes if isinstance(r, dict) and r.get("id") is not None}
+
+    def public_meal(value):
+        if not isinstance(value, (str, int)) or not value:
+            return {"name": "", "symbol": ""}
+        item = by_id.get(str(value))
+        if item:
+            name = item.get("name", "")
+            symbol = item.get("photo_symbol", "🍽️")
+            return {"name": str(name)[:160], "symbol": str(symbol)[:8] if isinstance(symbol, str) else "🍽️"}
+        # Allow simple custom meals stored as plain text; no recipe metadata.
+        return {"name": str(value)[:160], "symbol": "🍽️"}
+
+    days = []
+    for offset in range(7):
+        day = (start + timedelta(days=offset)).isoformat()
+        meals = plans.get(day)
+        if not isinstance(meals, dict):
+            meals = {}
+        days.append({"date": day, "mittag": public_meal(meals.get("mittag")),
+                     "abend": public_meal(meals.get("abend"))})
+    connection.send_result(msg["id"], {"installed": True, "week_start": start.isoformat(), "days": days})
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
@@ -1726,7 +1789,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
         ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_enter, ws_tablet_select, ws_tablet_settings_save, ws_display_settings_save,
-        ws_child_task_create, ws_child_event_create, ws_challenge_settings_save, ws_family_reward_claim,
+        ws_child_task_create, ws_child_event_create, ws_challenge_settings_save, ws_family_reward_claim, ws_meal_week,
     ):
         websocket_api.async_register_command(hass, command)
     hub_data["commands_registered"] = True

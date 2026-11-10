@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.33";
+const FAMILY_HUB_UI_VERSION = "0.3.34";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -19,6 +19,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.weekMemberFilter = "";
     this.editEvent = null;
     this.tab = "today";
+    this.mealWeekAnchor = new Date();
+    this.mealWeekData = null;
+    this.mealWeekBusy = false;
+    this.mealWeekError = "";
     this.busy = false;
     this.loaded = false;
     this.error = "";
@@ -95,6 +99,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:"bamlabs_family_hub/tablet_enter"});
       this.tab = "today";
+      this.mealWeekData = null;
       this.loaded = true;
       this.error = "";
       this.checkVersion();
@@ -285,6 +290,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       .family-stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;margin-top:18px}.family-stats-person{border:1px solid var(--divider-color,#dfe5ee);border-left:6px solid var(--family-person-color,#6688bb);background:var(--card-background-color,#fff);border-radius:17px;padding:15px;min-width:0}.family-stats-name{font-size:20px;font-weight:850;margin-bottom:12px}.family-stats-counts{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.family-stats-number{background:var(--secondary-background-color,#f4f7fa);border-radius:12px;padding:11px 7px;display:flex;flex-direction:column;text-align:center;gap:5px;min-width:0}.family-stats-number strong{font-size:19px}.family-stats-number .small{font-size:11px}.family-challenge-count{font-size:19px;font-weight:850;margin:14px 0}.family-progress-track{height:23px;border-radius:99px;background:var(--secondary-background-color,#e5e9ef);overflow:hidden;border:1px solid var(--divider-color,#dfe5ee)}.family-progress-fill{height:100%;background:linear-gradient(90deg,#19ab9b,#81cd6e);transition:width .2s}.family-challenge-finish{font-weight:850;font-size:20px;padding:18px;border-radius:15px;background:var(--secondary-background-color,#f1f7f0);margin:14px 0}.family-reward-card{border:2px solid var(--divider-color,#dfe5ee);border-radius:16px;padding:16px;margin-top:15px;background:var(--secondary-background-color,#f3f7fb);display:grid;gap:8px}.family-reward-title{font-size:19px;font-weight:800;overflow-wrap:anywhere}.family-reward-card .btn{justify-self:start}.family-challenge-form{display:grid;gap:12px;margin-top:18px;max-width:490px}.family-challenge-toggle{display:flex;align-items:center;gap:12px;cursor:pointer;font-weight:750}.family-challenge-toggle input{width:23px;height:23px}@media(max-width:700px){.family-stats-grid{grid-template-columns:1fr}.family-stats-number strong{font-size:16px}}
       .kid-success-hero{border-top:6px solid var(--success-color,#3b82f6)}.kid-success-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}.kid-success-stat{border:1px solid var(--divider-color,#dfe5ee);background:var(--secondary-background-color,#f4f7fa);border-radius:18px;padding:18px 10px;display:flex;align-items:center;flex-direction:column;gap:8px;text-align:center}.kid-success-symbol{font-size:34px}.kid-success-number{font-size:30px}.kid-success-label{font-size:13px;font-weight:700}.kid-success-message{padding:14px;background:var(--secondary-background-color,#f4f7fa);border-radius:14px;font-weight:750;font-size:17px;margin-bottom:20px}.kid-success-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-bottom:18px}.kid-success-day{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 3px;border-radius:13px;background:var(--secondary-background-color,#f4f7fa);text-align:center}.kid-success-day.is-today{outline:2px solid var(--success-color,#3b82f6)}.kid-success-dayname{font-size:14px;font-weight:800}.kid-success-dayicon{font-size:26px}.kid-success-daycount{font-size:11px;color:var(--secondary-text-color,#697386)}@media(max-width:650px){.kid-success-stats{grid-template-columns:1fr}.kid-success-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
       @media(max-width:950px){.kid-week-days{grid-template-columns:1fr}.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.member-card-grid,.focus-grid{grid-template-columns:1fr}}@media(max-width:850px){.week-days{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:450px){.week-days{grid-template-columns:1fr}}@media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:1fr}.member-card-grid,.focus-grid{grid-template-columns:1fr}.kid-big-title{font-size:24px}}`;
+    style.textContent += `.meal-week-days{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}.meal-day-card{border:1px solid var(--divider-color,#dce2ea);border-radius:16px;padding:15px;background:var(--card-background-color,#fff)}.meal-day-card.today{border:3px solid var(--primary-color,#39afaa)}.meal-day-title{font-weight:850;font-size:19px;margin-bottom:12px}.meal-row{padding:10px;border-radius:10px;background:var(--secondary-background-color,#f4f7fc);margin-top:8px;display:flex;flex-direction:column;gap:4px}.meal-row strong{font-size:13px}.meal-row span{font-size:17px;font-weight:750;overflow-wrap:anywhere}@media(max-width:680px){.meal-week-days{grid-template-columns:1fr}}`;
     root.append(style);
     const page=this.el("main","page");
     const header=this.el("div","top");
@@ -325,8 +331,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const child = this.data._role === "child";
     const tabs = child ? [["today","🌞 Heute"],["childweek","🗓️ Meine Woche"],["success","🏆 Erfolge"],["routines","🌈 Mein Tag"],["school","🎒 Schule"],["lists","🛒 Listen"],["tasks","✅ Aufgaben"],["calendar","📅 Termine"]]
                        : [["today","🏡 Start"],["dayplan","📋 Tagesplan"],["familystats","🏆 Familie"],["week","🗓️ Woche"],["routines","🌈 Routinen"],["school","🎒 Schule & Kita"],["lists","🛒 Listen"],["calendar","📅 Kalender"],["tasks","✅ Aufgaben"],["members","👨‍👩‍👧 Familie"],["settings","⚙️ Einstellungen"]];
+    if(this.data._meal_planner_available) tabs.push(["meals","🍽️ Unser Essen"]);
     tabs.forEach(([id,label])=>{
-      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if((id==="calendar"||id==="week"||id==="dayplan")&&!child)this.refreshExternalEvents();},`tab ${this.tab===id?"selected":""}`));
+      nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if(id==="meals")this.loadMealWeek();if((id==="calendar"||id==="week"||id==="dayplan")&&!child)this.refreshExternalEvents();},`tab ${this.tab===id?"selected":""}`));
     });page.append(nav);
     if(this.savedNotice) page.append(this.el("div","save-success",this.savedNotice));
     if(this.error) page.append(this.el("div","notice",`Hinweis: ${this.error}`));
@@ -345,6 +352,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       if(this.tab==="calendar") this.renderCalendar(page);
       if(this.tab==="tasks") this.renderTasks(page);
       if(this.tab==="settings") this.renderSettings(page);
+      if(this.tab==="meals") this.renderMealWeek(page);
     }
     page.append(this.el("div","small footer","Der Family Hub speichert die Familiendaten lokal in Home Assistant."));
     root.append(page);
@@ -1126,6 +1134,52 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(!people.length)section.append(this.el("div","empty","Lege zuerst ein Familienmitglied an."));
     page.append(section);
   }
+  async loadMealWeek() {
+    if(!this._hass || !this.data._meal_planner_available || this.mealWeekBusy)return;
+    this.mealWeekBusy=true;
+    this.mealWeekError="";
+    this.render();
+    try {
+      const requested=this.isoDate(this.monday(this.mealWeekAnchor));
+      this.mealWeekData=await this._hass.callWS({type:"bamlabs_family_hub/meal_week",week_start:requested});
+    } catch(e) {
+      this.mealWeekData=null;
+      this.mealWeekError=e.message||String(e);
+    } finally {this.mealWeekBusy=false;this.render();}
+  }
+  renderMealWeek(page) {
+    if(!this.data._meal_planner_available)return;
+    const sec=this.el("section","panel");
+    sec.append(this.cardTitle("🍽️ Unser Essen"));
+    sec.append(this.el("p","small","Der Wochenplan aus BamLabs Meal Planner – hier nur zum Anschauen."));
+    const toolbar=this.el("div","actions");
+    toolbar.append(this.button("‹ Vorige Woche",()=>{this.mealWeekAnchor=this.addDays(this.mealWeekAnchor,-7);this.loadMealWeek();},"btn secondary"));
+    toolbar.append(this.button("Diese Woche",()=>{this.mealWeekAnchor=new Date();this.loadMealWeek();},"btn secondary"));
+    toolbar.append(this.button("Nächste Woche ›",()=>{this.mealWeekAnchor=this.addDays(this.mealWeekAnchor,7);this.loadMealWeek();},"btn secondary"));
+    sec.append(toolbar);
+    if(this.mealWeekBusy)sec.append(this.el("p","small","🍲 Speiseplan wird geladen …"));
+    if(this.mealWeekError)sec.append(this.el("p","notice",`Speiseplan konnte nicht geladen werden: ${this.mealWeekError}`));
+    const week=this.mealWeekData;
+    if(!this.mealWeekBusy && week && !week.installed)sec.append(this.el("p","small","Meal Planner ist nicht eingerichtet."));
+    if(week?.installed && !this.mealWeekBusy){
+      const days=this.el("div","meal-week-days");
+      const today=this.isoDate(new Date());
+      const fmt=d=>new Date(`${d}T12:00:00`).toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long"});
+      for(const day of (week.days||[])) {
+        const card=this.el("div",`meal-day-card ${day.date===today?"today":""}`);
+        card.append(this.el("div","meal-day-title",`${day.date===today?"🌞 ":""}${fmt(day.date)}`));
+        for(const [slot,label] of [["mittag","🥗 Mittagessen"],["abend","🌙 Abendessen"]]) {
+          const meal=day[slot]||{};
+          const row=this.el("div","meal-row");
+          row.append(this.el("strong",null,label),this.el("span",null,meal.name?`${meal.symbol||"🍽️"} ${meal.name}`:"Noch nichts geplant"));
+          card.append(row);
+        }
+        days.append(card);
+      }
+      sec.append(days);
+    }
+    page.append(sec);
+  }
   renderChild(page) {
     const me = this.data.members[0];
     const tasks = this.data.tasks || [];
@@ -1159,10 +1213,17 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const q6=this.button("",()=>{this.tab="lists";this.render();},"child-big-btn"); q6.append(this.el("span",null,"🛒"),this.el("strong",null,"Listen"),this.el("span","mini-note","Was fehlt noch?"));
     const q7=this.button("",()=>{this.tab="childweek";this.weekAnchor=new Date();this.render();},"child-big-btn"); q7.append(this.el("span",null,"🗓️"),this.el("strong",null,"Meine Woche"),this.el("span","mini-note","Was kommt als Nächstes?"));
     const q8=this.button("",()=>{this.tab="success";this.render();},"child-big-btn"); q8.append(this.el("span",null,"🏆"),this.el("strong",null,"Meine Erfolge"),this.el("span","mini-note","Was habe ich geschafft?"));
-    quick.append(q4,q7,q5,q6,q1,q2,q3,q8); welcome.append(quick);
+    quick.append(q4,q7,q5,q6,q1,q2,q3,q8);
+    if(this.data._meal_planner_available) {
+      const mealBtn=this.button("",()=>{this.tab="meals";this.render();this.loadMealWeek();},"child-big-btn");
+      mealBtn.append(this.el("span",null,"🍽️"),this.el("strong",null,"Unser Essen"),this.el("span","mini-note","Was gibt es diese Woche?"));
+      quick.append(mealBtn);
+    }
+    welcome.append(quick);
     if(overdue) welcome.append(this.el("p", "notice", `⏰ Achtung: ${overdue} ${overdue===1?"Aufgabe ist":"Aufgaben sind"} schon überfällig.`));
     page.append(welcome);
 
+    if(this.tab === "meals") this.renderMealWeek(page);
     if(this.tab === "success") this.renderChildSuccess(page);
     if(this.tab === "childweek") this.renderChildWeek(page);
     if(this.tab === "routines") this.renderRoutines(page, true);
