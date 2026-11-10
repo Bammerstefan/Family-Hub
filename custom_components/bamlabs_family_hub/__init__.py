@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "work_plan": data.get("work_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.35",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.36",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -222,7 +222,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "work_plan": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -239,6 +239,7 @@ def _visible_state(hub, connection):
             "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id],
             "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id],
             "school_modes": {member_id: state.get("school_modes", {}).get(member_id, "kindergarten")},
+            "work_plan": [s for s in state.get("work_plan", []) if s.get("member_id") == member_id],
             "display_settings": state.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}),
             "family_lists": [l for l in state.get("family_lists", []) if member_id in l.get("member_ids", [])]}
 
@@ -366,6 +367,7 @@ async def ws_state(hass, connection, msg):
     vol.Required("name"): str,
     vol.Required("color"): str,
     vol.Optional("avatar", default="🙂"): str,
+    vol.Optional("role", default="child"): vol.In(("child", "parent")),
 })
 @websocket_api.async_response
 async def ws_member_save(hass, connection, msg):
@@ -388,9 +390,9 @@ async def ws_member_save(hass, connection, msg):
             connection.send_error(msg["id"], "not_found", "Familienmitglied nicht gefunden")
             return
         if member:
-            member.update(name=name, color=color, avatar=avatar)
+            member.update(name=name, color=color, avatar=avatar, role=msg["role"])
         else:
-            members.append({"id": uuid4().hex, "name": name, "color": color, "avatar": avatar})
+            members.append({"id": uuid4().hex, "name": name, "color": color, "avatar": avatar, "role": msg["role"]})
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
@@ -421,6 +423,7 @@ async def ws_member_delete(hass, connection, msg):
         hub["state"]["calendar_members"] = {k: v for k, v in hub["state"].get("calendar_members", {}).items() if v != msg["member_id"]}
         hub["state"]["school_plan"] = [s for s in hub["state"].get("school_plan", []) if s.get("member_id") != msg["member_id"]]
         hub["state"].setdefault("school_modes", {}).pop(msg["member_id"], None)
+        hub["state"]["work_plan"] = [s for s in hub["state"].get("work_plan", []) if s.get("member_id") != msg["member_id"]]
         for routine in hub["state"].get("routines", []):
             routine["member_ids"] = [mid for mid in routine.get("member_ids", []) if mid != msg["member_id"]]
         hub["state"]["routine_checks"] = [c for c in hub["state"].get("routine_checks", []) if c.get("member_id") != msg["member_id"]]
@@ -1447,8 +1450,8 @@ async def ws_school_mode_save(hass, connection, msg):
     if not hub or not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen den Plantyp ändern")
         return
-    if msg["member_id"] not in {m["id"] for m in hub["state"]["members"]}:
-        connection.send_error(msg["id"], "invalid_data", "Familienmitglied fehlt")
+    if msg["member_id"] not in {m["id"] for m in hub["state"]["members"] if m.get("role", "child") == "child"}:
+        connection.send_error(msg["id"], "invalid_data", "Bitte ein Kind auswählen")
         return
     async with hub["lock"]:
         hub["state"].setdefault("school_modes", {})[msg["member_id"]] = msg["mode"]
@@ -1489,8 +1492,8 @@ async def ws_school_save(hass, connection, msg):
             datetime.strptime(time, "%H:%M")
             if len(time) != 5:
                 raise ValueError("Uhrzeit muss HH:MM sein")
-        if msg["member_id"] not in {m["id"] for m in hub["state"]["members"]}:
-            raise ValueError("Familienmitglied fehlt")
+        if msg["member_id"] not in {m["id"] for m in hub["state"]["members"] if m.get("role", "child") == "child"}:
+            raise ValueError("Bitte ein Kind auswählen")
     except (ValueError, TypeError) as err:
         connection.send_error(msg["id"], "invalid_data", str(err))
         return
@@ -1534,6 +1537,71 @@ async def ws_school_delete(hass, connection, msg):
         await hub["store"].async_save(hub["state"])
     connection.send_result(msg["id"], _visible_state(hub, connection))
 
+
+
+
+# Weekly recurring work shifts are independent of children's school/kindergarten timetables.
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/work_save",
+    vol.Optional("entry_id", default=""): str,
+    vol.Required("member_id"): str,
+    vol.Required("weekday"): vol.All(vol.Coerce(int), vol.Range(min=0, max=6)),
+    vol.Required("title"): str,
+    vol.Optional("time", default=""): str,
+    vol.Optional("end_time", default=""): str,
+})
+@websocket_api.async_response
+async def ws_work_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen den Dienstplan bearbeiten")
+        return
+    try:
+        title = _text(msg["title"], 80)
+        start = msg["time"]
+        end = msg["end_time"]
+        for value in (start, end):
+            if value and (len(value) != 5 or datetime.strptime(value, "%H:%M").strftime("%H:%M") != value):
+                raise ValueError("Bitte Uhrzeiten im Format HH:MM eintragen")
+        if end and not start:
+            raise ValueError("Bitte eine Startzeit angeben")
+        if not any(m["id"] == msg["member_id"] and m.get("role", "child") == "parent" for m in hub["state"]["members"]):
+            raise ValueError("Bitte einen Elternteil auswählen")
+    except (ValueError, TypeError) as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        entries = hub["state"].setdefault("work_plan", [])
+        existing = next((s for s in entries if s.get("id") == msg["entry_id"]), None) if msg["entry_id"] else None
+        if msg["entry_id"] and not existing:
+            connection.send_error(msg["id"], "not_found", "Dienst nicht gefunden")
+            return
+        values = {"member_id": msg["member_id"], "weekday": msg["weekday"], "title": title,
+                  "time": start, "end_time": end}
+        if existing:
+            existing.update(values)
+        else:
+            entries.append({"id": uuid4().hex, **values})
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/work_delete", vol.Required("entry_id"): str})
+@websocket_api.async_response
+async def ws_work_delete(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    async with hub["lock"]:
+        entries = hub["state"].setdefault("work_plan", [])
+        new = [s for s in entries if s.get("id") != msg["entry_id"]]
+        if len(new) == len(entries):
+            connection.send_error(msg["id"], "not_found", "Dienst nicht gefunden")
+            return
+        hub["state"]["work_plan"] = new
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
 # Standalone family shopping and packing lists. Never depend on Meal Planner.
@@ -1821,7 +1889,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     for command in (
         ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
-        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete,
+        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete, ws_work_save, ws_work_delete,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,

@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.35";
+const FAMILY_HUB_UI_VERSION = "0.3.36";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, family_lists: [], family_challenge: {enabled:false,goal:30}};
+    this.data = {members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, work_plan: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -32,6 +32,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.editSchool = null;
     this.schoolNewFor = null;
     this.schoolNewDay = 0;
+    this.editWork = null;
+    this.workNewFor = null;
+    this.workNewDay = 0;
     this.editList = null;
     this.listTypeFilter = "all";
     this.childAccounts = null;
@@ -135,7 +138,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung"};
+      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -331,8 +334,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     }
     const nav=this.el("nav","nav");
     const child = this.data._role === "child";
+    const assignedParent=child && this.data.members?.[0]?.role==="parent";
     const tabs = child ? [["today","🌞 Heute"],["childweek","🗓️ Meine Woche"],["success","🏆 Erfolge"],["routines","🌈 Mein Tag"],["school","🎒 Schule"],["lists","🛒 Listen"],["tasks","✅ Aufgaben"],["calendar","📅 Termine"]]
-                       : [["today","🏡 Start"],["dayplan","📋 Tagesplan"],["familystats","🏆 Familie"],["week","🗓️ Woche"],["routines","🌈 Routinen"],["school","🎒 Schule & Kita"],["lists","🛒 Listen"],["calendar","📅 Kalender"],["tasks","✅ Aufgaben"],["members","👨‍👩‍👧 Familie"],["settings","⚙️ Einstellungen"]];
+                       : [["today","🏡 Start"],["dayplan","📋 Tagesplan"],["familystats","🏆 Familie"],["week","🗓️ Woche"],["routines","🌈 Routinen"],["school","🎒 Schule & Kita"],["work","💼 Dienstplan"],["lists","🛒 Listen"],["calendar","📅 Kalender"],["tasks","✅ Aufgaben"],["members","👨‍👩‍👧 Familie"],["settings","⚙️ Einstellungen"]];
+    if(assignedParent){const schoolTab=tabs.find(t=>t[0]==="school");if(schoolTab){schoolTab[0]="work";schoolTab[1]="💼 Mein Dienstplan";}}
     if(this.data._meal_planner_available) tabs.push(["meals","🍽️ Unser Essen"]);
     tabs.forEach(([id,label])=>{
       nav.append(this.button(label,()=>{this.tab=id;this.editMember=null;this.editTask=null;this.editEvent=null;this.render();if(id==="meals")this.loadMealWeek();if((id==="calendar"||id==="week"||id==="dayplan")&&!child)this.refreshExternalEvents();},`tab ${this.tab===id?"selected":""}`));
@@ -348,6 +353,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       if(this.tab==="familystats") this.renderFamilyStats(page);
       if(this.tab==="routines") this.renderRoutines(page);
       if(this.tab==="school") this.renderSchool(page);
+      if(this.tab==="work") this.renderWork(page);
       if(this.tab==="lists") this.renderLists(page);
       if(this.tab==="week") this.renderWeek(page);
       if(this.tab==="members") this.renderMembers(page);
@@ -486,12 +492,13 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const personEvents=this.occurrences(iso,iso);
       const dayTasks=(this.data.tasks||[]).filter(t=>t.due && (offset===0 ? t.due<=iso : t.due===iso));
       const dayRoutines=(this.data.routines||[]).filter(r=>(r.days||[]).includes(weekday));
-      const school=(this.data.school_plan||[]).filter(x=>Number(x.weekday)===weekday);
+      const school=(this.data.school_plan||[]).filter(x=>Number(x.weekday)===weekday && (this.data.members||[]).some(m=>m.id===x.member_id&&m.role!=="parent"));
+      const work=(this.data.work_plan||[]).filter(x=>Number(x.weekday)===weekday);
       const col=this.el("section",`family-day-column${offset===0?" today":""}`);
       const heading=this.el("div","family-day-heading");
       heading.append(this.el("h2",null,offset===0?"🌞 Heute":"🌤️ Morgen"),this.el("strong",null,date.toLocaleDateString("de-AT",{weekday:"short",day:"numeric",month:"short"})));
       col.append(heading);
-      const count=dayTasks.length+personEvents.length+school.length+dayRoutines.length;
+      const count=dayTasks.length+personEvents.length+school.length+work.length+dayRoutines.length;
       col.append(this.el("p","family-day-summary",count?`${count} Einträge für diesen Tag` : "Heute ist noch nichts geplant"));
       let any=false;
       const members=[...(this.data.members||[]),{id:"",name:"Gemeinsam",color:"#64748b",avatar:"🏡"}];
@@ -500,8 +507,9 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         const tasks=dayTasks.filter(t=>mid ? (t.assignees||[]).includes(mid)&&!this.completedFor(t,mid) : !(t.assignees||[]).length&&!this.completedForAll(t));
         const events=personEvents.filter(o=>mid ? (o.event.members||[]).includes(mid) : !(o.event.members||[]).length);
         const schoolItems=school.filter(x=>mid && x.member_id===mid).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+        const workItems=work.filter(x=>mid && x.member_id===mid).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
         const routines=dayRoutines.filter(r=>mid && (r.member_ids||[]).includes(mid));
-        if(!tasks.length&&!events.length&&!schoolItems.length&&!routines.length)continue;
+        if(!tasks.length&&!events.length&&!schoolItems.length&&!workItems.length&&!routines.length)continue;
         any=true;
         const group=this.el("div","family-day-member");group.style.setProperty("--member-color",member.color||"#64748b");
         const header=this.el("div","family-day-person");
@@ -510,6 +518,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         const add=(icon,text)=>{const item=this.el("div","family-day-entry");item.append(this.el("span",null,icon),this.el("span",null,text));group.append(item);};
         events.forEach(o=>add("📅",`${o.time?o.time+" · ":""}${o.event.title}`));
         schoolItems.forEach(e=>add(e.icon||"🎒",`${e.time?e.time+" · ":""}${e.title}`));
+        workItems.forEach(e=>add("💼",`${e.time?e.time+(e.end_time?"–"+e.end_time:"")+" · ":""}${e.title}`));
         routines.forEach(r=>{
           const total=(r.steps||[]).length;
           if(offset===0){
@@ -549,7 +558,17 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       stats.append(c);
     });
     page.append(stats);
-    const todaysSchool=(this.data.school_plan||[]).filter(s=>s.weekday===(today.getDay()+6)%7);
+    const todaysWork=(this.data.work_plan||[]).filter(s=>Number(s.weekday)===(today.getDay()+6)%7);
+    if(todaysWork.length){
+      const workPeek=this.el("section","panel");workPeek.append(this.cardTitle("💼 Heute im Dienst"));
+      for(const member of (this.data.members||[]).filter(m=>m.role==="parent")){
+        for(const entry of todaysWork.filter(s=>s.member_id===member.id).sort((a,b)=>(a.time||"").localeCompare(b.time||""))){
+          const row=this.el("div","school-entry");row.append(this.el("span",null,"💼"),this.el("span",null,`${member.name}: ${entry.time?entry.time+(entry.end_time?"–"+entry.end_time:"")+" Uhr · ":""}${entry.title}`));workPeek.append(row);
+        }
+      }
+      workPeek.append(this.button("💼 Dienstplan öffnen",()=>{this.tab="work";this.render();},"btn secondary"));page.append(workPeek);
+    }
+    const todaysSchool=(this.data.school_plan||[]).filter(s=>s.weekday===(today.getDay()+6)%7 && (this.data.members||[]).some(m=>m.id===s.member_id&&m.role!=="parent"));
     if(todaysSchool.length){
       const schoolPeek=this.el("section","panel");
       schoolPeek.append(this.cardTitle("🎒 Heute in Schule & Kita"));
@@ -1077,6 +1096,62 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     else page.append(grid);
   }
 
+  renderWork(page, child=false) {
+    const section=this.el("section","panel school-section");
+    section.append(this.cardTitle(child?"💼 Mein Dienstplan":"💼 Dienstplan der Eltern"));
+    section.append(this.el("p","small",child?"Hier stehen deine Arbeitszeiten.":"Lege für jeden Elternteil die wiederkehrenden Dienste der Woche fest. Pro Tag sind auch mehrere Dienste möglich. Eine Endzeit vor der Startzeit bedeutet Nachtdienst über Mitternacht."));
+    const days=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
+    const people=(this.data.members||[]).filter(m=>m.role==="parent");
+    const entries=(this.data.work_plan||[]).slice().sort((a,b)=>Number(a.weekday)-Number(b.weekday)||(a.time||"").localeCompare(b.time||""));
+    const currentDay=(new Date().getDay()+6)%7;
+    for(const person of people){
+      const group=this.el("section","school-person");
+      const head=this.el("div","school-person-head");head.style.borderLeft=`7px solid ${person.color||"#41a89c"}`;
+      head.append(this.el("span","school-avatar",person.avatar||"👤"),this.el("strong",null,person.name));group.append(head);
+      const week=this.el("div","school-week");
+      for(let d=0;d<7;d++){
+        const day=this.el("section",`school-day ${d===currentDay?"school-day-now":""}`);
+        day.append(this.el("h3",null,`${d===currentDay?"☀️ Heute · ":""}${days[d]}`));
+        const items=entries.filter(e=>e.member_id===person.id&&Number(e.weekday)===d);
+        if(!items.length)day.append(this.el("div","small","Frei / kein Dienst eingetragen"));
+        for(const item of items){
+          const card=this.el("div","school-entry");card.append(this.el("span","school-entry-icon","💼"));
+          const info=this.el("div","school-entry-info");info.append(this.el("strong",null,item.title));
+          if(item.time)info.append(this.el("span","small",`${item.time}${item.end_time?" – "+item.end_time:""} Uhr${item.end_time&&item.end_time<item.time?" · Folgetag":""}`));
+          card.append(info);
+          if(!child){
+            card.append(this.button("✏️",()=>{this.editWork={...item};this.workNewFor=null;this.render();},"btn secondary"));
+            card.append(this.button("🗑️",()=>{if(confirm(`Dienst „${item.title}“ löschen?`))this.request("work_delete",{entry_id:item.id});},"btn secondary"));
+          }
+          day.append(card);
+        }
+        if(!child)day.append(this.button("➕ Dienst",()=>{this.editWork=null;this.workNewFor=person.id;this.workNewDay=d;this.render();},"btn secondary"));
+        week.append(day);
+      }
+      group.append(week);section.append(group);
+    }
+    if(!child){
+      const edit=this.editWork, selected=edit?.member_id||this.workNewFor;
+      if(selected&&people.some(m=>m.id===selected)){
+        const person=people.find(m=>m.id===selected);
+        const model=edit||{member_id:selected,weekday:this.workNewDay,title:"",time:"",end_time:""};
+        section.append(this.el("h3",null,`${edit?"✏️ Dienst bearbeiten":"➕ Dienst hinzufügen"} · ${person.name}`));
+        const form=this.el("form","formgrid");
+        const dayLabel=this.el("label","field");dayLabel.append(this.el("span","field-title","Wochentag"));
+        const day=this.el("select");days.forEach((name,i)=>{const o=this.el("option",null,name);o.value=String(i);day.append(o);});day.value=String(model.weekday);dayLabel.append(day);
+        const title=this.input("Dienst / Tätigkeit (z. B. Frühdienst)","text",model.title,"title");title.querySelector("input").required=true;title.querySelector("input").maxLength=80;
+        const start=this.input("Arbeitsbeginn","time",model.time||"","time");
+        const end=this.input("Arbeitsende","time",model.end_time||"","end_time");
+        const save=this.el("button","btn",edit?"💾 Änderungen speichern":"➕ Dienst speichern");save.type="submit";
+        form.append(dayLabel,title,start,end,save,this.button("Abbrechen",()=>{this.editWork=null;this.workNewFor=null;this.render();},"btn secondary"));
+        form.addEventListener("submit",e=>{e.preventDefault();this.request("work_save",{entry_id:model.id||"",member_id:selected,weekday:Number(day.value),title:title.querySelector("input").value,time:start.querySelector("input").value,end_time:end.querySelector("input").value}).then(()=>{if(!this.error){this.editWork=null;this.workNewFor=null;this.render();}});});
+        section.append(form);
+      }else section.append(this.el("p","small","Tippe beim gewünschten Elternteil auf ➕ Dienst."));
+    }
+    if(!people.length)section.append(this.el("div","empty",child?"Kein Dienstplan hinterlegt.":"Lege unter 👨‍👩‍👧 Familie zuerst ein Mitglied mit der Rolle Elternteil fest."));
+    page.append(section);
+  }
+
   renderSchool(page, child=false) {
     const section=this.el("section","panel school-section");
     section.append(this.cardTitle(child ? "🎒 Mein Wochenplan" : "🎒 Schule & Kindergarten"));
@@ -1084,7 +1159,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const days=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
     const entries=(this.data.school_plan||[]).slice().sort((a,b)=>Number(a.weekday)-Number(b.weekday)||(a.time||"").localeCompare(b.time||"")||(a.title||"").localeCompare(b.title||""));
     const currentDay=(new Date().getDay()+6)%7;
-    const people=this.data.members||[];
+    const people=(this.data.members||[]).filter(m=>m.role!=="parent");
     for(const person of people){
       const mine=entries.filter(x=>x.member_id===person.id);
       const savedMode=(this.data.school_modes||{})[person.id];
@@ -1235,7 +1310,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const q2=this.button("",()=>{this.tab="calendar";this.render();},"child-big-btn"); q2.append(this.el("span",null,"📅"),this.el("strong",null,"Termine"),this.el("span","mini-note","Was kommt heute?"));
     const q3=this.button("",()=>{this.tab="today";this.render();},"child-big-btn"); q3.append(this.el("span",null,"⭐"),this.el("strong",null,"Sterne"),this.el("span","mini-note","Meine Belohnungen"));
     const q4=this.button("",()=>{this.tab="routines";this.render();},"child-big-btn"); q4.append(this.el("span",null,"🌈"),this.el("strong",null,"Mein Tag"),this.el("span","mini-note","Meine Routine"));
-    const q5=this.button("",()=>{this.tab="school";this.render();},"child-big-btn"); q5.append(this.el("span",null,"🎒"),this.el("strong",null,"Schule & Kita"),this.el("span","mini-note","Mein Wochenplan"));
+    const isParent=me?.role==="parent";
+    const q5=this.button("",()=>{this.tab=isParent?"work":"school";this.render();},"child-big-btn"); q5.append(this.el("span",null,isParent?"💼":"🎒"),this.el("strong",null,isParent?"Mein Dienstplan":"Schule & Kita"),this.el("span","mini-note",isParent?"Meine Arbeitszeiten":"Mein Wochenplan"));
     const q6=this.button("",()=>{this.tab="lists";this.render();},"child-big-btn"); q6.append(this.el("span",null,"🛒"),this.el("strong",null,"Listen"),this.el("span","mini-note","Was fehlt noch?"));
     const q7=this.button("",()=>{this.tab="childweek";this.weekAnchor=new Date();this.render();},"child-big-btn"); q7.append(this.el("span",null,"🗓️"),this.el("strong",null,"Meine Woche"),this.el("span","mini-note","Was kommt als Nächstes?"));
     const q8=this.button("",()=>{this.tab="success";this.render();},"child-big-btn"); q8.append(this.el("span",null,"🏆"),this.el("strong",null,"Meine Erfolge"),this.el("span","mini-note","Was habe ich geschafft?"));
@@ -1253,10 +1329,11 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(this.tab === "success") this.renderChildSuccess(page);
     if(this.tab === "childweek") this.renderChildWeek(page);
     if(this.tab === "routines") this.renderRoutines(page, true);
-    if(this.tab === "school") this.renderSchool(page, true);
+    if(this.tab === "school" && !isParent) this.renderSchool(page, true);
+    if(this.tab === "work" && isParent) this.renderWork(page, true);
     if(this.tab === "lists") this.renderLists(page, true);
     if(this.tab === "today") this.renderRoutines(page, true);
-    if(this.tab === "today" && (this.data.school_plan||[]).some(s=>s.weekday===(new Date().getDay()+6)%7)){
+    if(this.tab === "today" && !isParent && (this.data.school_plan||[]).some(s=>s.weekday===(new Date().getDay()+6)%7)){
       const peek=this.el("section","panel");peek.append(this.cardTitle("🎒 Heute in Schule & Kita"));
       for(const e of (this.data.school_plan||[]).filter(s=>s.weekday===(new Date().getDay()+6)%7).sort((a,b)=>(a.time||"").localeCompare(b.time||""))){peek.append(this.el("div","school-entry",`${e.icon}  ${e.time?e.time+" Uhr · ":""}${e.title}`));}
       peek.append(this.button("Meine Woche ansehen",()=>{this.tab="school";this.render();},"btn secondary"));page.append(peek);
@@ -1519,9 +1596,15 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         } else row.append(this.el("span",null,task.icon||"✅"));
         row.append(this.el("span","kid-week-entry-text",task.title));return row;
       });
-      addGroup("🎒","Schule & Kita",school.filter(x=>Number(x.weekday)===weekday).sort((a,b)=>(a.time||"").localeCompare(b.time||"")),entry=>{
-        const row=this.el("div","kid-week-entry");row.append(this.el("span",null,entry.icon||"🎒"),this.el("span","kid-week-entry-text",`${entry.time?entry.time+" · ":""}${entry.title}`));return row;
-      });
+      if(me?.role==="parent") {
+        addGroup("💼","Dienstplan",(this.data.work_plan||[]).filter(x=>Number(x.weekday)===weekday).sort((a,b)=>(a.time||"").localeCompare(b.time||"")),entry=>{
+          const row=this.el("div","kid-week-entry");row.append(this.el("span",null,"💼"),this.el("span","kid-week-entry-text",`${entry.time?entry.time+(entry.end_time?"–"+entry.end_time:"")+" · ":""}${entry.title}`));return row;
+        });
+      } else {
+        addGroup("🎒","Schule & Kita",school.filter(x=>Number(x.weekday)===weekday).sort((a,b)=>(a.time||"").localeCompare(b.time||"")),entry=>{
+          const row=this.el("div","kid-week-entry");row.append(this.el("span",null,entry.icon||"🎒"),this.el("span","kid-week-entry-text",`${entry.time?entry.time+" · ":""}${entry.title}`));return row;
+        });
+      }
       addGroup("🌈","Routinen",routines.filter(r=>(r.days||[]).includes(weekday)),r=>{
         const row=this.el("div","kid-week-entry");row.append(this.el("span",null,r.icon||"🌈"),this.el("span","kid-week-entry-text",`${r.title} (${(r.steps||[]).length} Schritte)`));return row;
       });
@@ -1691,7 +1774,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   }
   renderMembers(page) {
     const card=this.el("section","panel");card.append(this.cardTitle("Familienmitglieder"));
-    const add=this.button(this.editMember?"Bearbeitung abbrechen":"+ Familienmitglied hinzufügen",()=>{this.editMember=this.editMember?null:{name:"",color:"#3B82F6",avatar:"🙂"};this.render();});card.append(add);
+    const add=this.button(this.editMember?"Bearbeitung abbrechen":"+ Familienmitglied hinzufügen",()=>{this.editMember=this.editMember?null:{name:"",color:"#3B82F6",avatar:"🙂",role:"child"};this.render();});card.append(add);
     if(this.editMember){
       const f=this.el("form","formgrid");const n=this.input("Name","text",this.editMember.name,"name");n.querySelector("input").required=true;
       const c=this.input("Farbe","color",this.editMember.color,"color");
@@ -1703,13 +1786,16 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       });
       avatarSelect.value=this.editMember.avatar||"🙂";
       avatarLabel.append(avatarSelect);
-      f.append(n,c,avatarLabel);
+      const roleLabel=this.el("label","field");roleLabel.append(this.el("span","field-title","Familienrolle"));
+      const roleSel=this.el("select");for(const [value,label] of [["child","🧒 Kind"],["parent","👨‍👩‍👧 Elternteil"]]){const opt=this.el("option",null,label);opt.value=value;roleSel.append(opt);}
+      roleSel.value=this.editMember.role||"child";roleLabel.append(roleSel);
+      f.append(n,c,avatarLabel,roleLabel);
       const save=this.el("div","full");const submit=this.el("button","btn","Speichern");submit.type="submit";save.append(submit);
-      f.append(save);f.addEventListener("submit",e=>{e.preventDefault();this.request("member_save",{member_id:this.editMember.id||"",name:n.querySelector("input").value,color:c.querySelector("input").value,avatar:avatarSelect.value});});card.append(f);
+      f.append(save);f.addEventListener("submit",e=>{e.preventDefault();this.request("member_save",{member_id:this.editMember.id||"",name:n.querySelector("input").value,color:c.querySelector("input").value,avatar:avatarSelect.value,role:roleSel.value});});card.append(f);
     }
     const list=this.el("div","list");
     this.data.members.forEach(m=>{const r=this.el("div","item");const dot=this.el("span","dot");dot.style.background=m.color;
-      const name=this.el("div","item-main item-title",`${m.avatar||"🙂"} ${m.name}`);r.append(dot,name);
+      const name=this.el("div","item-main item-title",`${m.avatar||"🙂"} ${m.name} · ${m.role==="parent"?"Elternteil":"Kind"}`);r.append(dot,name);
       r.append(this.button("Bearbeiten",()=>{this.editMember={...m};this.render();},"btn secondary"));
       r.append(this.button("Löschen",()=>{if(confirm(`„${m.name}“ löschen? Aufgaben bleiben erhalten, aber die Zuordnung wird entfernt.`))this.request("member_delete",{member_id:m.id});},"btn secondary danger"));list.append(r);
     });
