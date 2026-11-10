@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -124,7 +124,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.34",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.35",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -222,7 +222,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -238,6 +238,7 @@ def _visible_state(hub, connection):
             "routines": [r for r in state.get("routines", []) if member_id in r.get("member_ids", [])],
             "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id],
             "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id],
+            "school_modes": {member_id: state.get("school_modes", {}).get(member_id, "kindergarten")},
             "display_settings": state.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}),
             "family_lists": [l for l in state.get("family_lists", []) if member_id in l.get("member_ids", [])]}
 
@@ -419,6 +420,7 @@ async def ws_member_delete(hass, connection, msg):
             event["members"] = [i for i in event.get("members", []) if i != msg["member_id"]]
         hub["state"]["calendar_members"] = {k: v for k, v in hub["state"].get("calendar_members", {}).items() if v != msg["member_id"]}
         hub["state"]["school_plan"] = [s for s in hub["state"].get("school_plan", []) if s.get("member_id") != msg["member_id"]]
+        hub["state"].setdefault("school_modes", {}).pop(msg["member_id"], None)
         for routine in hub["state"].get("routines", []):
             routine["member_ids"] = [mid for mid in routine.get("member_ids", []) if mid != msg["member_id"]]
         hub["state"]["routine_checks"] = [c for c in hub["state"].get("routine_checks", []) if c.get("member_id") != msg["member_id"]]
@@ -1433,6 +1435,27 @@ async def ws_routine_toggle(hass, connection, msg):
     connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
+# Per-child timetable kind: existing school entries are preserved when switching.
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/school_mode_save",
+    vol.Required("member_id"): str,
+    vol.Required("mode"): vol.In(("kindergarten", "school")),
+})
+@websocket_api.async_response
+async def ws_school_mode_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen den Plantyp ändern")
+        return
+    if msg["member_id"] not in {m["id"] for m in hub["state"]["members"]}:
+        connection.send_error(msg["id"], "invalid_data", "Familienmitglied fehlt")
+        return
+    async with hub["lock"]:
+        hub["state"].setdefault("school_modes", {})[msg["member_id"]] = msg["mode"]
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
 # Weekly school/kindergarten timetable: admin-only writes, member-scoped reads.
 _SCHOOL_ICONS = ("🎒", "📚", "✏️", "🎨", "⚽", "🎵", "🧮", "🔬", "📖", "🏊", "🧸", "🥪", "🚌", "🌳", "🧩")
 
@@ -1444,6 +1467,7 @@ _SCHOOL_ICONS = ("🎒", "📚", "✏️", "🎨", "⚽", "🎵", "🧮", "🔬"
     vol.Required("title"): str,
     vol.Required("icon"): vol.In(_SCHOOL_ICONS),
     vol.Optional("time", default=""): str,
+    vol.Optional("end_time", default=""): str,
 })
 @websocket_api.async_response
 async def ws_school_save(hass, connection, msg):
@@ -1454,6 +1478,13 @@ async def ws_school_save(hass, connection, msg):
     try:
         title = _text(msg["title"], 80)
         time = msg["time"]
+        end_time = msg["end_time"]
+        if end_time:
+            datetime.strptime(end_time, "%H:%M")
+            if len(end_time) != 5 or not time:
+                raise ValueError("Für das Ende bitte eine gültige Startzeit angeben")
+            if end_time <= time:
+                raise ValueError("Die Endzeit muss nach dem Beginn liegen")
         if time:
             datetime.strptime(time, "%H:%M")
             if len(time) != 5:
@@ -1469,8 +1500,15 @@ async def ws_school_save(hass, connection, msg):
         if msg["entry_id"] and not existing:
             connection.send_error(msg["id"], "not_found", "Eintrag nicht gefunden")
             return
+        mode = hub["state"].get("school_modes", {}).get(msg["member_id"], "kindergarten")
+        if mode == "kindergarten":
+            conflicting = [e for e in entries if e.get("member_id") == msg["member_id"]
+                           and int(e.get("weekday", -1)) == msg["weekday"] and e.get("id") != msg["entry_id"]]
+            if conflicting:
+                connection.send_error(msg["id"], "invalid_data", "Für diesen Tag gibt es bereits einen Eintrag. Bitte diesen bearbeiten oder den Plantyp Stundenplan wählen.")
+                return
         values = {"member_id": msg["member_id"], "weekday": msg["weekday"], "title": title,
-                  "icon": msg["icon"], "time": time}
+                  "icon": msg["icon"], "time": time, "end_time": end_time}
         if existing:
             existing.update(values)
         else:
@@ -1783,7 +1821,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     for command in (
         ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
-        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_save, ws_school_delete,
+        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,

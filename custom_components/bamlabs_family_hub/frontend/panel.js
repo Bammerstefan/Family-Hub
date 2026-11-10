@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.34";
+const FAMILY_HUB_UI_VERSION = "0.3.35";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
+    this.data = {members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, family_lists: [], family_challenge: {enabled:false,goal:30}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -30,6 +30,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.editTask = null;
     this.editRoutine = null;
     this.editSchool = null;
+    this.schoolNewFor = null;
+    this.schoolNewDay = 0;
     this.editList = null;
     this.listTypeFilter = "all";
     this.childAccounts = null;
@@ -133,7 +135,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung"};
+      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -1078,58 +1080,82 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   renderSchool(page, child=false) {
     const section=this.el("section","panel school-section");
     section.append(this.cardTitle(child ? "🎒 Mein Wochenplan" : "🎒 Schule & Kindergarten"));
-    section.append(this.el("p","small",child ? "Was steht heute an? Die Bilder helfen dir beim Planen!" : "Hier kannst du für jedes Kind Fächer, Kindergarten-Aktivitäten und Zeiten eintragen. Nur die Eltern können den Plan bearbeiten."));
+    section.append(this.el("p","small",child ? "Hier siehst du deine Tage, Unterrichtsstunden und Pausen." : "Wähle für jedes Kind Kindergarten (ein Eintrag pro Tag) oder Stundenplan (beliebig viele Stunden mit Fach und Uhrzeit). Bestehende Einträge bleiben beim Wechsel erhalten."));
     const days=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag","Samstag","Sonntag"];
-    const entries=(this.data.school_plan || []).slice().sort((a,b)=>a.weekday-b.weekday||(a.time||"").localeCompare(b.time||"")||a.title.localeCompare(b.title));
+    const entries=(this.data.school_plan||[]).slice().sort((a,b)=>Number(a.weekday)-Number(b.weekday)||(a.time||"").localeCompare(b.time||"")||(a.title||"").localeCompare(b.title||""));
     const currentDay=(new Date().getDay()+6)%7;
-    const people=this.data.members || [];
-    for(const person of people) {
+    const people=this.data.members||[];
+    for(const person of people){
       const mine=entries.filter(x=>x.member_id===person.id);
+      const savedMode=(this.data.school_modes||{})[person.id];
+      const mode=savedMode||([0,1,2,3,4,5,6].some(d=>mine.filter(x=>Number(x.weekday)===d).length>1)?"school":"kindergarten");
       const group=this.el("section","school-person");
-      const header=this.el("div","school-person-head"); header.style.borderLeft=`7px solid ${person.color}`;
-      const avatar=this.el("span","school-avatar",person.name.slice(0,1).toUpperCase());avatar.style.background=person.color;
+      const header=this.el("div","school-person-head");header.style.borderLeft=`7px solid ${person.color||"#41a89c"}`;
+      const avatar=this.el("span","school-avatar",person.name.slice(0,1).toUpperCase());avatar.style.background=person.color||"#41a89c";
       header.append(avatar,this.el("strong",null,person.name));group.append(header);
+      if(!child){
+        const choose=this.el("label","field");choose.append(this.el("span","field-title","Plan für "+person.name));
+        const modeSel=this.el("select");
+        for(const [value,name] of [["kindergarten","🧸 Kindergarten · 1 Eintrag pro Tag"],["school","📚 Stundenplan · mehrere Stunden pro Tag"]]){
+          const o=this.el("option",null,name);o.value=value;modeSel.append(o);
+        }
+        modeSel.value=mode;
+        modeSel.addEventListener("change",()=>this.request("school_mode_save",{member_id:person.id,mode:modeSel.value}).then(()=>{this.editSchool=null;}));
+        choose.append(modeSel);group.append(choose);
+      } else group.append(this.el("p","small",mode==="school"?"📚 Mein Stundenplan":"🧸 Mein Kindergartenplan"));
       const week=this.el("div","school-week");
-      for(let d=0;d<7;d++) {
-        // Weekends without entries do not take up screen space.
-        if(d>4 && !mine.some(x=>x.weekday===d)) continue;
+      for(let d=0;d<7;d++){
+        if(d>4&&!mine.some(x=>Number(x.weekday)===d))continue;
         const block=this.el("section",`school-day ${d===currentDay?"school-day-now":""}`);
         block.append(this.el("h3",null,`${d===currentDay?"☀️ Heute · ":""}${days[d]}`));
-        const dayItems=mine.filter(x=>x.weekday===d);
-        if(!dayItems.length) block.append(this.el("div","small","Noch nichts eingetragen"));
-        for(const item of dayItems) {
-          const card=this.el("div","school-entry");
-          card.append(this.el("span","school-entry-icon",item.icon));
+        const dayItems=mine.filter(x=>Number(x.weekday)===d);
+        if(!dayItems.length)block.append(this.el("div","small","Noch nichts eingetragen"));
+        for(const item of dayItems){
+          const card=this.el("div","school-entry");card.append(this.el("span","school-entry-icon",item.icon||"🎒"));
           const info=this.el("div","school-entry-info");info.append(this.el("strong",null,item.title));
-          if(item.time) info.append(this.el("span","small",`${item.time} Uhr`));
+          if(item.time)info.append(this.el("span","small",`${item.time}${item.end_time?" – "+item.end_time:""} Uhr`));
           card.append(info);
-          if(!child) {
-            card.append(this.button("✏️",()=>{this.editSchool={...item};this.render();},"btn secondary"));
+          if(!child){
+            card.append(this.button("✏️",()=>{this.editSchool={...item};this.schoolNewFor=null;this.render();},"btn secondary"));
             card.append(this.button("🗑️",()=>{if(confirm(`Eintrag „${item.title}“ löschen?`))this.request("school_delete",{entry_id:item.id});},"btn secondary"));
           }
           block.append(card);
+        }
+        if(!child&&(mode==="school"||!dayItems.length)){
+          block.append(this.button(mode==="school"?"➕ Stunde":"➕ Eintrag",()=>{this.editSchool=null;this.schoolNewFor=person.id;this.schoolNewDay=d;this.render();},"btn secondary"));
         }
         week.append(block);
       }
       group.append(week);section.append(group);
     }
-    if(!child){
-      section.append(this.el("h3",null,this.editSchool?.id?"✏️ Eintrag bearbeiten":"➕ Wochenplan ergänzen"));
-      const form=this.el("form","formgrid");
-      const model=this.editSchool||{member_id:this.data.members[0]?.id||"",weekday:0,title:"",icon:"🎒",time:""};
-      const person=this.el("label","field"); person.append(this.el("span","field-title","Für wen?"));
-      const member=this.el("select"); this.data.members.forEach(m=>{const o=this.el("option",null,m.name);o.value=m.id;member.append(o);});member.value=model.member_id;person.append(member);
-      const dayField=this.el("label","field");dayField.append(this.el("span","field-title","Wochentag"));
-      const day=this.el("select");days.forEach((name,i)=>{const o=this.el("option",null,name);o.value=String(i);day.append(o);});day.value=String(model.weekday);dayField.append(day);
-      const title=this.input("Was steht an?","text",model.title,"title");title.querySelector("input").required=true;title.querySelector("input").maxLength=80;
-      const clock=this.input("Uhrzeit (optional)","time",model.time,"time");
-      const iconField=this.el("label","field"); iconField.append(this.el("span","field-title","Bildsymbol"));
-      const icon=this.el("select");for(const value of ["🎒","📚","✏️","🎨","⚽","🎵","🧮","🔬","📖","🏊","🧸","🥪","🚌","🌳","🧩"]){const o=this.el("option",null,value);o.value=value;icon.append(o);} icon.value=model.icon; iconField.append(icon);
-      const save=this.el("button","btn",this.editSchool?.id?"💾 Änderungen speichern":"➕ Eintrag hinzufügen");save.type="submit";
-      form.append(person,dayField,title,clock,iconField,save);
-      if(this.editSchool?.id) form.append(this.button("Abbrechen",()=>{this.editSchool=null;this.render();},"btn secondary"));
-      form.addEventListener("submit",e=>{e.preventDefault();this.request("school_save",{entry_id:model.id||"",member_id:member.value,weekday:Number(day.value),title:title.querySelector("input").value,time:clock.querySelector("input").value,icon:icon.value}).then(()=>{if(!this.error)this.editSchool=null;});});
-      section.append(form);
+    if(!child && people.length){
+      const edit=this.editSchool;
+      const selected=edit?.member_id||this.schoolNewFor;
+      if(selected){
+        const person=people.find(m=>m.id===selected);
+        const mode=(this.data.school_modes||{})[selected]||([0,1,2,3,4,5,6].some(d=>entries.filter(x=>x.member_id===selected&&Number(x.weekday)===d).length>1)?"school":"kindergarten");
+        const model=edit||{member_id:selected,weekday:this.schoolNewDay,title:"",icon:mode==="school"?"📚":"🎒",time:"",end_time:""};
+        const form=this.el("form","formgrid");
+        const heading=this.el("h3",null,`${edit?"✏️ Bearbeiten":"➕ Hinzufügen"} · ${person?.name||""} · ${mode==="school"?"Stundenplan":"Kindergarten"}`);
+        section.append(heading);
+        const dayField=this.el("label","field");dayField.append(this.el("span","field-title","Wochentag"));
+        const day=this.el("select");days.forEach((name,i)=>{const o=this.el("option",null,name);o.value=String(i);day.append(o);});day.value=String(model.weekday);dayField.append(day);
+        const title=this.input(mode==="school"?"Fach / Unterricht (z. B. Mathematik)":"Was steht an?", "text",model.title,"title");
+        title.querySelector("input").required=true;title.querySelector("input").maxLength=80;
+        const clock=this.input("Beginn (optional)","time",model.time||"","time");
+        const end=this.input("Ende (optional)","time",model.end_time||"","end_time");
+        const iconField=this.el("label","field");iconField.append(this.el("span","field-title","Bildsymbol"));
+        const icon=this.el("select");for(const value of ["🎒","📚","✏️","🎨","⚽","🎵","🧮","🔬","📖","🏊","🧸","🥪","🚌","🌳","🧩"]){const o=this.el("option",null,value);o.value=value;icon.append(o);}icon.value=model.icon||"🎒";iconField.append(icon);
+        const save=this.el("button","btn",edit?"💾 Änderungen speichern":"➕ Eintrag speichern");save.type="submit";
+        form.append(dayField,title,clock,end,iconField,save);
+        form.append(this.button("Abbrechen",()=>{this.editSchool=null;this.schoolNewFor=null;this.render();},"btn secondary"));
+        form.addEventListener("submit",e=>{
+          e.preventDefault();
+          const payload={entry_id:model.id||"",member_id:selected,weekday:Number(day.value),title:title.querySelector("input").value,time:clock.querySelector("input").value,end_time:end.querySelector("input").value,icon:icon.value};
+          this.request("school_save",payload).then(()=>{if(!this.error){this.editSchool=null;this.schoolNewFor=null;this.render();}});
+        });
+        section.append(form);
+      } else section.append(this.el("p","small","Tippe beim gewünschten Kind und Tag auf ➕ Stunde oder ➕ Eintrag."));
     }
     if(!people.length)section.append(this.el("div","empty","Lege zuerst ein Familienmitglied an."));
     page.append(section);
