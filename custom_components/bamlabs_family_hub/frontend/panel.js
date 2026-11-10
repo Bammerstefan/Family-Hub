@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.36";
+const FAMILY_HUB_UI_VERSION = "0.3.37";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -19,6 +19,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.weekMemberFilter = "";
     this.editEvent = null;
     this.tab = "today";
+    this._lastRenderedTab = null;
     this.mealWeekAnchor = new Date();
     this.mealWeekData = null;
     this.mealWeekBusy = false;
@@ -296,6 +297,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       .kid-success-hero{border-top:6px solid var(--success-color,#3b82f6)}.kid-success-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}.kid-success-stat{border:1px solid var(--divider-color,#dfe5ee);background:var(--secondary-background-color,#f4f7fa);border-radius:18px;padding:18px 10px;display:flex;align-items:center;flex-direction:column;gap:8px;text-align:center}.kid-success-symbol{font-size:34px}.kid-success-number{font-size:30px}.kid-success-label{font-size:13px;font-weight:700}.kid-success-message{padding:14px;background:var(--secondary-background-color,#f4f7fa);border-radius:14px;font-weight:750;font-size:17px;margin-bottom:20px}.kid-success-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-bottom:18px}.kid-success-day{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 3px;border-radius:13px;background:var(--secondary-background-color,#f4f7fa);text-align:center}.kid-success-day.is-today{outline:2px solid var(--success-color,#3b82f6)}.kid-success-dayname{font-size:14px;font-weight:800}.kid-success-dayicon{font-size:26px}.kid-success-daycount{font-size:11px;color:var(--secondary-text-color,#697386)}@media(max-width:650px){.kid-success-stats{grid-template-columns:1fr}.kid-success-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
       @media(max-width:950px){.kid-week-days{grid-template-columns:1fr}.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.member-card-grid,.focus-grid{grid-template-columns:1fr}}@media(max-width:850px){.week-days{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:450px){.week-days{grid-template-columns:1fr}}@media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:1fr}.member-card-grid,.focus-grid{grid-template-columns:1fr}.kid-big-title{font-size:24px}}`;
     style.textContent += `.meal-week-days{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}.meal-day-card{border:1px solid var(--divider-color,#dce2ea);border-radius:16px;padding:15px;background:var(--card-background-color,#fff)}.meal-day-card.today{border:3px solid var(--primary-color,#39afaa)}.meal-day-title{font-weight:850;font-size:19px;margin-bottom:12px}.meal-row{padding:10px;border-radius:10px;background:var(--secondary-background-color,#f4f7fc);margin-top:8px;display:flex;flex-direction:column;gap:4px}.meal-row strong{font-size:13px}.meal-row span{font-size:17px;font-weight:750;overflow-wrap:anywhere}@media(max-width:680px){.meal-week-days{grid-template-columns:1fr}}`;
+    style.textContent += `.work-week{grid-template-columns:repeat(auto-fit,minmax(min(100%,295px),1fr));align-items:stretch}.work-week .school-day{min-width:0}.work-entry{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:start;gap:10px;padding:12px}.work-entry .school-entry-icon{font-size:24px;line-height:1.4}.work-entry-info{min-width:0;overflow-wrap:break-word;word-break:normal}.work-entry-info strong{font-size:16px;line-height:1.35}.work-entry-info .small{font-size:13px;line-height:1.5;overflow-wrap:normal;white-space:normal}.work-entry-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:2px}.work-entry-actions .btn{min-width:42px;min-height:40px;flex:none}.hub-content-start{scroll-margin-top:14px;height:1px}@media(max-width:700px){.work-week{grid-template-columns:1fr}}`;
     root.append(style);
     const page=this.el("main","page");
     const header=this.el("div","top");
@@ -344,6 +346,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     });page.append(nav);
     if(this.savedNotice) page.append(this.el("div","save-success",this.savedNotice));
     if(this.error) page.append(this.el("div","notice",`Hinweis: ${this.error}`));
+    const contentAnchor=this.el("div","hub-content-start");page.append(contentAnchor);
     if(!this.loaded) {page.append(this.el("div","panel",this.busy?"Daten werden geladen …":"Keine Verbindung zu Family Hub. Bitte Integration prüfen."));root.append(page);return;}
     if(child){
       this.renderChild(page);
@@ -364,6 +367,17 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     }
     page.append(this.el("div","small footer","Der Family Hub speichert die Familiendaten lokal in Home Assistant."));
     root.append(page);
+    // Scroll only when the selected section actually changes, not when data refreshes.
+    // This also handles the large children menu and its shortcut tiles.
+    const moved=this._lastRenderedTab!==null && this._lastRenderedTab!==this.tab;
+    this._lastRenderedTab=this.tab;
+    if(moved){
+      requestAnimationFrame(()=>{
+        if(this.isConnected && this._lastRenderedTab===this.tab){
+          this.shadowRoot.querySelector(".hub-content-start")?.scrollIntoView({behavior:"smooth",block:"start"});
+        }
+      });
+    }
   }
   async selectTabletMember(memberId) {
     if(this.busy) return;
@@ -1108,20 +1122,22 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const group=this.el("section","school-person");
       const head=this.el("div","school-person-head");head.style.borderLeft=`7px solid ${person.color||"#41a89c"}`;
       head.append(this.el("span","school-avatar",person.avatar||"👤"),this.el("strong",null,person.name));group.append(head);
-      const week=this.el("div","school-week");
+      const week=this.el("div","school-week work-week");
       for(let d=0;d<7;d++){
         const day=this.el("section",`school-day ${d===currentDay?"school-day-now":""}`);
         day.append(this.el("h3",null,`${d===currentDay?"☀️ Heute · ":""}${days[d]}`));
         const items=entries.filter(e=>e.member_id===person.id&&Number(e.weekday)===d);
         if(!items.length)day.append(this.el("div","small","Frei / kein Dienst eingetragen"));
         for(const item of items){
-          const card=this.el("div","school-entry");card.append(this.el("span","school-entry-icon","💼"));
+          const card=this.el("div","school-entry work-entry");card.append(this.el("span","school-entry-icon","💼"));
           const info=this.el("div","school-entry-info");info.append(this.el("strong",null,item.title));
           if(item.time)info.append(this.el("span","small",`${item.time}${item.end_time?" – "+item.end_time:""} Uhr${item.end_time&&item.end_time<item.time?" · Folgetag":""}`));
           card.append(info);
           if(!child){
-            card.append(this.button("✏️",()=>{this.editWork={...item};this.workNewFor=null;this.render();},"btn secondary"));
-            card.append(this.button("🗑️",()=>{if(confirm(`Dienst „${item.title}“ löschen?`))this.request("work_delete",{entry_id:item.id});},"btn secondary"));
+            const workActions=this.el("div","work-entry-actions");
+            const change=this.button("✏️",()=>{this.editWork={...item};this.workNewFor=null;this.render();},"btn secondary");change.title="Dienst bearbeiten";
+            const remove=this.button("🗑️",()=>{if(confirm(`Dienst „${item.title}“ löschen?`))this.request("work_delete",{entry_id:item.id});},"btn secondary");remove.title="Dienst löschen";
+            workActions.append(change,remove);card.append(workActions);
           }
           day.append(card);
         }
