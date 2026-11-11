@@ -1,1 +1,1 @@
-Version 0.3.9: Versionsanzeige korrigiert. In v0.3.8 zeigte die Oberfläche trotz neuer Datei fälschlich 0.3.7 an.
+Frontend, Backend und panel.js Cache-Key: 0.3.45

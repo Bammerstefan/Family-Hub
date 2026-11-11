@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.44";
+const FAMILY_HUB_UI_VERSION = "0.3.45";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
+    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -303,6 +303,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       .kid-success-hero{border-top:6px solid var(--success-color,#3b82f6)}.kid-success-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:18px 0}.kid-success-stat{border:1px solid var(--divider-color,#dfe5ee);background:var(--secondary-background-color,#f4f7fa);border-radius:18px;padding:18px 10px;display:flex;align-items:center;flex-direction:column;gap:8px;text-align:center}.kid-success-symbol{font-size:34px}.kid-success-number{font-size:30px}.kid-success-label{font-size:13px;font-weight:700}.kid-success-message{padding:14px;background:var(--secondary-background-color,#f4f7fa);border-radius:14px;font-weight:750;font-size:17px;margin-bottom:20px}.kid-success-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;margin-bottom:18px}.kid-success-day{display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 3px;border-radius:13px;background:var(--secondary-background-color,#f4f7fa);text-align:center}.kid-success-day.is-today{outline:2px solid var(--success-color,#3b82f6)}.kid-success-dayname{font-size:14px;font-weight:800}.kid-success-dayicon{font-size:26px}.kid-success-daycount{font-size:11px;color:var(--secondary-text-color,#697386)}@media(max-width:650px){.kid-success-stats{grid-template-columns:1fr}.kid-success-days{grid-template-columns:repeat(4,minmax(0,1fr))}}
       @media(max-width:950px){.kid-week-days{grid-template-columns:1fr}.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.member-card-grid,.focus-grid{grid-template-columns:1fr}}@media(max-width:850px){.week-days{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:450px){.week-days{grid-template-columns:1fr}}@media(max-width:650px){.page{padding:14px 12px 40px}.grid{grid-template-columns:1fr 1fr}.formgrid{grid-template-columns:1fr}.item{align-items:flex-start}.actions{gap:5px}.btn{padding:9px 10px}.brand{font-size:22px}.calday{min-height:77px;padding:4px}.calentry{font-size:10px;padding:3px}.daynum{font-size:12px}.child-stats{gap:5px}.child-stat{padding:10px 3px}.child-stat-number{font-size:18px}.child-action{width:100%}.child-task{min-height:66px}.hero-grid,.big-link-grid,.kid-quick-grid{grid-template-columns:1fr}.member-card-grid,.focus-grid{grid-template-columns:1fr}.kid-big-title{font-size:24px}}`;
     style.textContent += `.overview-title{font-size:23px;font-weight:850;margin:0 0 5px}.overview-sub{margin:0 0 14px;color:var(--secondary-text-color,#697386);font-size:14px}.overview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:18px}.overview-tile{display:grid;align-content:start;gap:9px;min-width:0;padding:16px;border-radius:17px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-left:5px solid #5b8cef;text-align:left;color:var(--primary-text-color,#192238);min-height:118px}.overview-tile:hover{box-shadow:0 5px 20px #00000012}.overview-tile:focus-visible{outline:3px solid var(--primary-color,#1464db);outline-offset:2px}.overview-tile strong{font-size:16px}.overview-tile .overview-line{font-size:14px;line-height:1.45;overflow-wrap:anywhere}.overview-tile .overview-note{font-size:12px;color:var(--secondary-text-color,#697386)}@media(min-width:1000px){.overview-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:520px){.overview-grid{grid-template-columns:minmax(0,1fr)}.overview-tile{min-height:auto;padding:14px}}`;
+    style.textContent += `.school-year-archive{margin:12px 0;padding:12px;border:1px solid var(--divider-color,#cbd5e1);border-radius:12px}.school-year-archive summary{cursor:pointer;font-weight:700;line-height:1.6}.school-year-archive .actions{align-items:end;flex-wrap:wrap}.school-year-archive .actions .field{min-width:180px;flex:1}.school-year-archive .item{min-width:0;flex-wrap:wrap}`;
     style.textContent += `.birthday-row{display:flex;align-items:center;gap:12px;padding:12px;margin:10px 0;border-left:5px solid #9e81d4;background:var(--secondary-background-color,#f1f5fb);border-radius:12px;min-width:0}.birthday-avatar{font-size:29px;flex-shrink:0}.birthday-countdown{font-size:14px;white-space:nowrap}.birthday-panel{margin-top:14px}@media(max-width:390px){.birthday-row{gap:7px;padding:9px}.birthday-countdown{font-size:12px}}`;
     style.textContent += `.meal-week-days{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}.meal-day-card{border:1px solid var(--divider-color,#dce2ea);border-radius:16px;padding:15px;background:var(--card-background-color,#fff)}.meal-day-card.today{border:3px solid var(--primary-color,#39afaa)}.meal-day-title{font-weight:850;font-size:19px;margin-bottom:12px}.meal-row{padding:10px;border-radius:10px;background:var(--secondary-background-color,#f4f7fc);margin-top:8px;display:flex;flex-direction:column;gap:4px}.meal-row strong{font-size:13px}.meal-row span{font-size:17px;font-weight:750;overflow-wrap:anywhere}@media(max-width:680px){.meal-week-days{grid-template-columns:1fr}}`;
     style.textContent += `.school-absence-panel{margin:16px 0;padding:14px;border:1px solid var(--divider-color,#aaa);border-radius:16px}.school-absence-panel>.btn{width:100%;text-align:left}.school-absence-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;border-radius:12px;background:var(--secondary-background-color,#eee);margin:8px 0}.school-absence-row>span{flex:1;min-width:170px;overflow-wrap:anywhere}.school-live-info{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:var(--secondary-background-color,#eee);border-left:5px solid var(--primary-color,#03a9f4);border-radius:10px;margin:10px 0}.school-absence-badge{border:1px solid var(--warning-color,#eab308);background:var(--secondary-background-color,#eee);border-radius:10px;padding:12px;font-weight:700;margin:10px 0}`;
@@ -776,6 +777,24 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const ev={id:"external",title:ext.title,description:ext.description||"",members:assigned?[assigned]:[],
         start:ext.start,end:ext.end,all_day:ext.all_day,external:true,source:ext.calendar};
       out.push({event:ev,start,end:last,time:ext.all_day?"":ext.start.slice(11,16)});
+    }
+    // Birthdays are calculated from member profiles, never written as duplicate events.
+    if(this.tab === "calendar") {
+      const startYear=Number(from.slice(0,4)), endYear=Number(to.slice(0,4));
+      for(const member of (this.data.members||[])) {
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(member.birthday||"")) continue;
+        const month=Number(member.birthday.slice(5,7)), day=Number(member.birthday.slice(8,10));
+        for(let year=startYear;year<=endYear;year++) {
+          // 29 February is shown on 28 February in non-leap years.
+          const realDay=month===2&&day===29&&new Date(year,1,29).getMonth()!==1?28:day;
+          const iso=`${year}-${String(month).padStart(2,"0")}-${String(realDay).padStart(2,"0")}`;
+          if(iso<from||iso>to)continue;
+          const ev={id:`birthday:${member.id}:${year}`,title:`🎂 ${member.name} hat Geburtstag`,
+            members:[member.id],all_day:true,start:`${iso}T00:00`,end:`${iso}T23:59`,
+            external:true,source:"Geburtstag",description:"Jährlich aus dem Familienprofil"};
+          out.push({event:ev,start:iso,end:iso,time:""});
+        }
+      }
     }
     // Work shifts and absences appear read-only in the family calendar only.
     if(this.tab === "calendar") {
@@ -1482,6 +1501,27 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         modeSel.addEventListener("change",()=>this.request("school_mode_save",{member_id:person.id,mode:modeSel.value}).then(()=>{this.editSchool=null;}));
         choose.append(modeSel);group.append(choose);
       } else group.append(this.el("p","small",mode==="school"?"📚 Mein Stundenplan":"🧸 Mein Kindergartenplan"));
+      if(!child && mode==="school") {
+        const archive=this.el("details","school-year-archive");
+        const active=(this.data.school_year_active||{})[person.id]||"Bisheriger Stundenplan";
+        archive.append(this.el("summary",null,`📚 Schuljahre verwalten · Aktuell: ${active}`));
+        archive.append(this.el("p","small","Beim Start eines neuen Schuljahrs wird der bisherige Stundenplan archiviert. Der neue Plan übernimmt die Fächer als Vorlage – du musst nur Änderungen eintragen."));
+        const row=this.el("div","actions");
+        const next=this.input("Neues Schuljahr (z. B. 2027/28)","text","","new-school-year");
+        next.querySelector("input").maxLength=32;
+        row.append(next,this.button("📚 Neues Schuljahr starten",()=>{
+          const label=next.querySelector("input").value.trim();
+          if(!label)return alert("Bitte das neue Schuljahr eingeben.");
+          if(confirm(`Stundenplan von ${person.name} als „${active}“ archivieren und „${label}“ beginnen?`))
+            this.request("school_year_start",{member_id:person.id,new_label:label});
+        },"btn secondary"));archive.append(row);
+        const old=(this.data.school_years||[]).filter(y=>y.member_id===person.id).slice().reverse();
+        if(old.length){archive.append(this.el("strong",null,"Gespeicherte Schuljahre"));
+          old.forEach(y=>{const r=this.el("div","item");r.append(this.el("div","item-main",`${y.label} · ${(y.lessons||[]).length} Einträge · gesichert ${y.saved_at||""}`));
+            r.append(this.button("↩ Wiederherstellen",()=>{if(confirm(`Den aktuellen Stundenplan von ${person.name} durch „${y.label}“ ersetzen? Der aktuelle wird vorher automatisch archiviert.`))this.request("school_year_restore",{member_id:person.id,year_id:y.id});},"btn secondary"));archive.append(r);});
+        } else archive.append(this.el("div","small","Noch keine archivierten Schuljahre."));
+        group.append(archive);
+      }
       if(!child && mode==="school")this.renderPackSettings(group,person,mine);
       if(mode==="school"){
         const status=this.schoolNowNext(person.id);

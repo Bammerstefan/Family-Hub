@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", "")}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", "")}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -126,7 +126,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.44",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.45",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -224,7 +224,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "school_absences": [], "school_pack_settings": {}, "school_pack_checks": [], "birthday_settings": {"enabled": False}, "work_plan": [], "work_exceptions": [], "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_years": [], "school_year_active": {}, "school_modes": {}, "school_absences": [], "school_pack_settings": {}, "school_pack_checks": [], "birthday_settings": {"enabled": False}, "work_plan": [], "work_exceptions": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -240,6 +240,7 @@ def _visible_state(hub, connection):
             "routines": [r for r in state.get("routines", []) if member_id in r.get("member_ids", [])],
             "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id],
             "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id],
+            "school_year_active": {member_id: state.get("school_year_active", {}).get(member_id, "")},
             "school_modes": {member_id: state.get("school_modes", {}).get(member_id, "kindergarten")},
             "school_absences": [a for a in state.get("school_absences", []) if a.get("member_id") == member_id],
             "school_pack_settings": {member_id: state.get("school_pack_settings", {}).get(member_id, {"enabled": False, "subjects": {}})},
@@ -433,6 +434,8 @@ async def ws_member_delete(hass, connection, msg):
             event["members"] = [i for i in event.get("members", []) if i != msg["member_id"]]
         hub["state"]["calendar_members"] = {k: v for k, v in hub["state"].get("calendar_members", {}).items() if v != msg["member_id"]}
         hub["state"]["school_plan"] = [s for s in hub["state"].get("school_plan", []) if s.get("member_id") != msg["member_id"]]
+        hub["state"]["school_years"] = [y for y in hub["state"].get("school_years", []) if y.get("member_id") != msg["member_id"]]
+        hub["state"].setdefault("school_year_active", {}).pop(msg["member_id"], None)
         hub["state"].setdefault("school_modes", {}).pop(msg["member_id"], None)
         hub["state"]["school_absences"] = [a for a in hub["state"].get("school_absences", []) if a.get("member_id") != msg["member_id"]]
         hub["state"].setdefault("school_pack_settings", {}).pop(msg["member_id"], None)
@@ -1477,6 +1480,78 @@ async def ws_school_mode_save(hass, connection, msg):
 # Weekly school/kindergarten timetable: admin-only writes, member-scoped reads.
 _SCHOOL_ICONS = ("🎒", "📚", "✏️", "🎨", "⚽", "🎵", "🧮", "🔬", "📖", "🏊", "🧸", "🥪", "🚌", "🌳", "🧩")
 
+
+# School-year snapshots preserve older timetables without duplicating live lessons.
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/school_year_start",
+    vol.Required("member_id"): str,
+    vol.Required("new_label"): str,
+})
+@websocket_api.async_response
+async def ws_school_year_start(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    try:
+        label = _text(msg["new_label"], 32)
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        mid = msg["member_id"]
+        if mid not in {m["id"] for m in state["members"] if m.get("role", "child") == "child"}:
+            connection.send_error(msg["id"], "invalid_data", "Kind nicht gefunden")
+            return
+        active = state.setdefault("school_year_active", {})
+        current_label = active.get(mid, "Bisheriger Stundenplan")
+        if label == current_label:
+            connection.send_error(msg["id"], "invalid_data", "Bitte ein anderes Schuljahr eingeben")
+            return
+        # Store a deep copy. Existing record snapshots must not be mutated by future edits.
+        import copy
+        lessons = [copy.deepcopy(s) for s in state.get("school_plan", []) if s.get("member_id") == mid]
+        archived = state.setdefault("school_years", [])
+        archived.append({"id": uuid4().hex, "member_id": mid, "label": current_label,
+                         "lessons": lessons, "saved_at": dt_util.now().date().isoformat()})
+        active[mid] = label
+        # The new school year begins with a *copy* so only changed subjects need editing.
+        await hub["store"].async_save(state)
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/school_year_restore",
+    vol.Required("member_id"): str,
+    vol.Required("year_id"): str,
+})
+@websocket_api.async_response
+async def ws_school_year_restore(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    import copy
+    async with hub["lock"]:
+        state = hub["state"]
+        mid = msg["member_id"]
+        archive = next((y for y in state.get("school_years", []) if y.get("id") == msg["year_id"] and y.get("member_id") == mid), None)
+        if archive is None:
+            connection.send_error(msg["id"], "not_found", "Schuljahr nicht gefunden")
+            return
+        active = state.setdefault("school_year_active", {})
+        current = [copy.deepcopy(s) for s in state.get("school_plan", []) if s.get("member_id") == mid]
+        state.setdefault("school_years", []).append({"id": uuid4().hex, "member_id": mid,
+            "label": active.get(mid, "Bisheriger Stundenplan"), "lessons": current,
+            "saved_at": dt_util.now().date().isoformat()})
+        # Recreate lesson IDs to avoid unintended reuse of old UI editing references.
+        restored = [{**copy.deepcopy(s), "id": uuid4().hex, "member_id": mid} for s in archive.get("lessons", [])]
+        state["school_plan"] = [s for s in state.get("school_plan", []) if s.get("member_id") != mid] + restored
+        active[mid] = archive.get("label", "Archiv")
+        await hub["store"].async_save(state)
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
 @websocket_api.websocket_command({
     vol.Required("type"): f"{DOMAIN}/school_save",
     vol.Optional("entry_id", default=""): str,
@@ -2305,7 +2380,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     for command in (
         ws_version, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
-        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
+        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
