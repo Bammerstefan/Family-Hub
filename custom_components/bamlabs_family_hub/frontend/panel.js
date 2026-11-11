@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.0.0";
+const FAMILY_HUB_UI_VERSION = "1.1.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
+    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], pro_savings_goals: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -150,7 +150,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung"};
+      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -1256,6 +1256,57 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   pointBalance(memberId) {
     return (this.data.point_entries || []).filter(e => e.member_id === memberId).reduce((sum,e) => sum + Number(e.amount || 0), 0);
   }
+  renderProSavings(page, child=false) {
+    const members=this.data.members||[];
+    const goals=this.data.pro_savings_goals||[];
+    const section=this.el("section","panel");
+    section.append(this.cardTitle("👑 PRO-Vorschau · Meine großen Wünsche"));
+    section.append(this.el("p","small","Ein freiwilliges Sparziel pro Person. Gesammelte Sterne bleiben erhalten; das Sparziel zieht keine Punkte ab. Diese Testfunktion hat noch keine Lizenzprüfung."));
+    for(const m of members){
+      const goal=goals.find(g=>g.member_id===m.id);
+      const balance=Math.max(0,this.pointBalance(m.id));
+      const card=this.el("div","pro-goal-card");card.style.cssText="padding:14px;margin:12px 0;border-radius:12px;background:var(--card-background-color,rgba(128,128,128,.12));min-width:0;"; card.style.borderLeft=`5px solid ${m.color||"#16a3a3"}`;
+      card.append(this.el("strong",null,`${m.avatar||"🌟"} ${m.name}`));
+      if(goal){
+        card.append(this.el("div","pro-goal-label",`${goal.emoji||"🎁"} ${goal.title}`));
+        const target=Math.max(1,Number(goal.target)||1);
+        const done=Math.min(100,Math.round(balance/target*100));
+        const bar=this.el("div","pro-goal-bar");bar.style.cssText="height:12px;border-radius:12px;background:rgba(128,128,128,.25);overflow:hidden;margin:10px 0;"; const fill=this.el("div","pro-goal-fill");fill.style.background="#21a88b";fill.style.height="100%";fill.style.width=`${done}%`;bar.append(fill);
+        card.append(bar,this.el("div","small",`⭐ ${balance} von ${target} Sternen · ${done}%`));
+        if(balance>=target)card.append(this.el("div","pro-goal-ready","🎉 Ziel erreicht! Gemeinsam mit den Eltern einlösen."));
+      }else card.append(this.el("div","small","Noch kein Sparziel hinterlegt."));
+      if(!child){
+        const form=this.el("form","formgrid");
+        const title=this.input("Wunsch","text",goal?.title||"","proGoalTitle");title.querySelector("input").required=true;
+        const target=this.input("Sterne-Ziel","number",String(goal?.target||100),"proGoalTarget");target.querySelector("input").min="1";target.querySelector("input").max="100000";
+        const emoji=this.input("Symbol","text",goal?.emoji||"🎁","proGoalEmoji");emoji.querySelector("input").maxLength=8;
+        const save=this.el("button","btn",goal?"Sparziel ändern":"Sparziel anlegen");save.type="submit";
+        form.append(title,target,emoji,save);
+        form.addEventListener("submit",e=>{e.preventDefault();this.request("pro_goal_save",{member_id:m.id,title:title.querySelector("input").value,target:Number(target.querySelector("input").value),emoji:emoji.querySelector("input").value});});
+        card.append(form);
+        if(goal)card.append(this.button("Sparziel entfernen",()=>{if(confirm(`Sparziel von ${m.name} entfernen?`))this.request("pro_goal_delete",{member_id:m.id});},"btn secondary"));
+      }
+      section.append(card);
+    }
+    page.append(section);
+  }
+  renderProBadges(page) {
+    const members=this.data.members||[];
+    const section=this.el("section","panel");section.append(this.cardTitle("🏅 PRO-Vorschau · Meine Abzeichen"));
+    section.append(this.el("p","small","Abzeichen zeigen persönliche Meilensteine – ohne Vergleich mit anderen Kindern."));
+    for(const m of members){
+      const completed=(this.data.task_completions||[]).filter(e=>e.member_id===m.id).length;
+      const routine=(this.data.routine_checks||[]).filter(e=>e.member_id===m.id).length;
+      const earned=(this.data.point_entries||[]).filter(e=>e.member_id===m.id&&e.kind==="earned").reduce((s,e)=>s+Number(e.amount||0),0);
+      const card=this.el("div","pro-goal-card");card.style.cssText="padding:14px;margin:12px 0;border-radius:12px;background:var(--card-background-color,rgba(128,128,128,.12));min-width:0;";card.style.borderLeft=`5px solid ${m.color||"#16a3a3"}`;
+      card.append(this.el("strong",null,`${m.name} · Meine Meilensteine`));
+      for(const [icon,label,achieved,needed] of [["✅","5 Aufgaben geschafft",completed,5],["🌈","10 Routinen erledigt",routine,10],["⭐","100 Sterne gesammelt",earned,100]]){
+        const line=this.el("div","pro-badge-line",`${achieved>=needed?"🏅":"🔒"} ${icon} ${label} (${Math.min(achieved,needed)}/${needed})`);card.append(line);
+      }
+      section.append(card);
+    }
+    page.append(section);
+  }
   renderRewards(page, child=false) {
     const members = this.data.members || [];
     const rewards = this.data.rewards || [];
@@ -1301,6 +1352,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       section.append(form);
     }
     page.append(section);
+    this.renderProSavings(page,child);
+    if(!child)this.renderProBadges(page);
   }
   renderLists(page, child=false) {
     const lists=(this.data.family_lists || []);
@@ -2084,6 +2137,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     card.append(this.el("p","small","Wir zählen Aufgaben und Routine-Schritte ab Version 0.3.31. Ältere erledigte Aufgaben können wir nicht rückwirkend datieren. Deine bisherigen Sterne bleiben erhalten."));
     page.append(card);
     this.renderChallengeBlock(page,false);
+    this.renderProSavings(page,true);
+    this.renderProBadges(page);
     if(completions.length) {
       const list=this.el("section","panel");
       list.append(this.cardTitle("🎉 Das hast du geschafft"));
@@ -2480,3 +2535,5 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   }
 }
 customElements.define("bamlabs-family-hub-panel",BamLabsFamilyHubPanel);
+
+/* PRO preview: responsive savings goal cards. */
