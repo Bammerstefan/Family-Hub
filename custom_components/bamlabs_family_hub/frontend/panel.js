@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.41";
+const FAMILY_HUB_UI_VERSION = "0.3.42";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
+    this.data = {members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -35,6 +35,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.schoolNewDay = 0;
     this.editSchoolAbsence = null;
     this.schoolAbsenceOpen = false;
+    this.packOpenFor = {};
+    this.packDay = "tomorrow";
     this.editWork = null;
     this.workNewFor = null;
     this.workNewDay = 0;
@@ -141,7 +143,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung"};
+      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -301,6 +303,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     style.textContent += `.meal-week-days{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}.meal-day-card{border:1px solid var(--divider-color,#dce2ea);border-radius:16px;padding:15px;background:var(--card-background-color,#fff)}.meal-day-card.today{border:3px solid var(--primary-color,#39afaa)}.meal-day-title{font-weight:850;font-size:19px;margin-bottom:12px}.meal-row{padding:10px;border-radius:10px;background:var(--secondary-background-color,#f4f7fc);margin-top:8px;display:flex;flex-direction:column;gap:4px}.meal-row strong{font-size:13px}.meal-row span{font-size:17px;font-weight:750;overflow-wrap:anywhere}@media(max-width:680px){.meal-week-days{grid-template-columns:1fr}}`;
     style.textContent += `.school-absence-panel{margin:16px 0;padding:14px;border:1px solid var(--divider-color,#aaa);border-radius:16px}.school-absence-panel>.btn{width:100%;text-align:left}.school-absence-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;border-radius:12px;background:var(--secondary-background-color,#eee);margin:8px 0}.school-absence-row>span{flex:1;min-width:170px;overflow-wrap:anywhere}.school-live-info{display:flex;flex-wrap:wrap;gap:10px;padding:12px;background:var(--secondary-background-color,#eee);border-left:5px solid var(--primary-color,#03a9f4);border-radius:10px;margin:10px 0}.school-absence-badge{border:1px solid var(--warning-color,#eab308);background:var(--secondary-background-color,#eee);border-radius:10px;padding:12px;font-weight:700;margin:10px 0}`;
     style.textContent += `.kid-lesson-entry{display:block;padding:10px 12px;min-width:0;overflow-wrap:normal}.kid-lesson-info{display:flex;flex-wrap:wrap;align-items:center;gap:5px 12px;min-width:0}.kid-lesson-time{display:inline-block;flex:0 0 auto;font-size:12px;font-weight:750;color:var(--secondary-text-color,#687386);white-space:nowrap}.kid-lesson-entry .kid-week-entry-text{flex:1 1 125px;min-width:0;overflow-wrap:break-word;word-break:normal}.kid-lesson-entry.is-current{outline:2px solid var(--kid-color,#3b82f6);background:color-mix(in srgb,var(--kid-color,#3b82f6) 12%,var(--secondary-background-color,#f1f5fb))}.kid-lesson-entry.is-past{opacity:.7}.kid-school-status{margin:12px 0;padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--kid-color,#3b82f6) 13%,var(--card-background-color,#fff));border:1px solid var(--kid-color,#3b82f6);line-height:1.5}.kid-routines-fold{margin-top:12px;border:1px solid var(--divider-color,#dde5ef);border-radius:12px;padding:10px 12px}.kid-routines-fold summary{cursor:pointer;list-style:revert;padding:3px}.kid-routines-fold .kid-week-entry{margin-top:8px}@media(max-width:450px){.kid-lesson-info{gap:3px 10px}.kid-lesson-entry .kid-week-entry-text{flex-basis:100%}}`;
+    style.textContent += `.school-pack-settings{border:1px solid var(--divider-color,#999);border-radius:15px;padding:13px;margin:14px 0;min-width:0}.school-pack-settings>.btn{width:100%;text-align:left}.school-pack-switch{display:flex;align-items:center;gap:12px;margin:15px 0;cursor:pointer}.school-pack-switch input{width:23px;height:23px}.school-pack-subject{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:12px 0;padding:11px;background:var(--secondary-background-color,#eee);border-radius:12px}.school-pack-subject>.field{flex:1 1 230px;min-width:0}.school-pack-subject input{max-width:100%;box-sizing:border-box}.school-pack-subject button{flex:none;min-height:43px}.school-pack-days{display:flex;flex-wrap:wrap;gap:10px;margin:15px 0}.school-pack-child{border-top:5px solid var(--kid-color,#3b82f6)}.school-pack-progress{font-size:18px;font-weight:800;margin:12px 0}.school-pack-item{display:flex;align-items:center;gap:14px;margin:10px 0;border-radius:14px;background:var(--secondary-background-color,#eee);padding:16px;min-height:55px;cursor:pointer}.school-pack-item input{width:25px;height:25px;flex:none;accent-color:var(--kid-color,#3b82f6)}.school-pack-item span{display:flex;flex-direction:column;gap:5px;min-width:0}.school-pack-item strong{font-size:17px;overflow-wrap:break-word}.school-pack-item small{color:var(--secondary-text-color,#777)}.school-pack-item.done{opacity:.75}.school-pack-item.done strong{text-decoration:line-through}.school-pack-finished{padding:17px;border:2px solid var(--kid-color,#3b82f6);border-radius:14px;font-weight:800;margin-top:14px}`;
     style.textContent += `.work-week{grid-template-columns:repeat(auto-fit,minmax(min(100%,295px),1fr));align-items:stretch}.work-week .school-day{min-width:0}.work-entry{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:start;gap:10px;padding:12px}.work-entry .school-entry-icon{font-size:24px;line-height:1.4}.work-entry-info{min-width:0;overflow-wrap:break-word;word-break:normal}.work-entry-info strong{font-size:16px;line-height:1.35}.work-entry-info .small{font-size:13px;line-height:1.5;overflow-wrap:normal;white-space:normal}.work-entry-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:2px}.work-entry-actions .btn{min-width:42px;min-height:40px;flex:none}.hub-content-start{scroll-margin-top:14px;height:1px}.work-date-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:12px;margin:12px 0 22px}.work-date-card{min-width:0;padding:14px;border:1px solid var(--divider-color,#555);border-radius:15px;background:var(--secondary-background-color,#262626);display:flex;flex-direction:column;gap:10px}.work-date-person{padding:6px 9px;font-weight:700;background:var(--card-background-color,#222);border-radius:8px}.work-date-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:9px;background:var(--card-background-color,#222);border-radius:8px;overflow-wrap:anywhere}.work-date-row>span{min-width:0;flex:1 1 130px}.work-date-row .btn{padding:7px 10px;flex:none}@media(max-width:700px){.work-week,.work-date-grid{grid-template-columns:1fr}}`;
     root.append(style);
     const page=this.el("main","page");
@@ -343,6 +346,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const assignedParent=child && this.data.members?.[0]?.role==="parent";
     const tabs = child ? [["today","🌞 Heute"],["childweek","🗓️ Meine Woche"],["success","🏆 Erfolge"],["routines","🌈 Mein Tag"],["school","🎒 Schule"],["lists","🛒 Listen"],["tasks","✅ Aufgaben"],["calendar","📅 Termine"]]
                        : [["today","🏡 Start"],["dayplan","📋 Tagesplan"],["familystats","🏆 Familie"],["week","🗓️ Woche"],["routines","🌈 Routinen"],["school","🎒 Schule & Kita"],["work","💼 Dienstplan"],["lists","🛒 Listen"],["calendar","📅 Kalender"],["tasks","✅ Aufgaben"],["members","👨‍👩‍👧 Familie"],["settings","⚙️ Einstellungen"]];
+    if(child && !assignedParent && this.data.school_pack_settings?.[this.data.members?.[0]?.id]?.enabled) tabs.splice(5,0,["pack","🎒 Schultasche"]);
     if(assignedParent){const schoolTab=tabs.find(t=>t[0]==="school");if(schoolTab){schoolTab[0]="work";schoolTab[1]="💼 Mein Dienstplan";}}
     if(this.data._meal_planner_available) tabs.push(["meals","🍽️ Unser Essen"]);
     tabs.forEach(([id,label])=>{
@@ -362,6 +366,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       if(this.tab==="familystats") this.renderFamilyStats(page);
       if(this.tab==="routines") this.renderRoutines(page);
       if(this.tab==="school") this.renderSchool(page);
+      if(this.tab==="pack") this.renderSchoolPack(page);
       if(this.tab==="work") this.renderWork(page);
       if(this.tab==="lists") this.renderLists(page);
       if(this.tab==="week") this.renderWeek(page);
@@ -1307,6 +1312,80 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     });
     area.append(form);section.append(area);
   }
+  packSettings(memberId) {
+    return this.data.school_pack_settings?.[memberId] || {enabled:false,subjects:{}};
+  }
+  packItemsFor(memberId,iso){
+    if(this.schoolAbsenceFor(memberId,iso))return [];
+    const settings=this.packSettings(memberId);
+    if(!settings.enabled)return [];
+    const weekday=(new Date(iso+"T12:00:00").getDay()+6)%7;
+    const lessons=(this.data.school_plan||[]).filter(x=>x.member_id===memberId&&Number(x.weekday)===weekday);
+    const seen=new Set(),results=[];
+    for(const lesson of lessons){
+      const subject=(lesson.title||"").trim().toLocaleLowerCase("de");
+      for(const name of settings.subjects?.[subject]||[]){
+        const key=subject+"|"+name.toLocaleLowerCase("de");
+        if(!seen.has(key)){seen.add(key);results.push({key,name,subject:lesson.title});}
+      }
+    }
+    return results;
+  }
+  renderPackSettings(group,person,mine){
+    const settings=this.packSettings(person.id), box=this.el("div","school-pack-settings");
+    const open=!!this.packOpenFor[person.id];
+    box.append(this.button(`${open?"▾":"▸"} 🎒 Schultaschen-Packliste ${settings.enabled?"(aktiv)":"(aus)"}`,()=>{this.packOpenFor[person.id]=!open;this.render();},"btn secondary"));
+    if(!open){group.append(box);return;}
+    const toggle=this.el("label","school-pack-switch");
+    const cb=this.el("input");cb.type="checkbox";cb.checked=!!settings.enabled;cb.disabled=this.busy;
+    cb.addEventListener("change",()=>this.request("school_pack_config_save",{member_id:person.id,enabled:cb.checked,subject:"",items:[]}));
+    toggle.append(cb,this.el("strong",null,"Packliste für "+person.name+" aktivieren"));box.append(toggle);
+    box.append(this.el("p","small","Optional: Nur bei aktiviertem Häkchen erscheint die Packliste im Kinderkonto. Die Liste wird aus dem Stundenplan für morgen erstellt. An schulfreien Tagen wird nichts angezeigt."));
+    const subjectNames=[...new Set(mine.map(s=>(s.title||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"de"));
+    if(!subjectNames.length)box.append(this.el("div","small","Trage zuerst Unterrichtsfächer im Stundenplan ein."));
+    for(const subject of subjectNames){
+      const key=subject.toLocaleLowerCase("de"), saved=settings.subjects?.[key]||[];
+      const row=this.el("form","school-pack-subject");
+      const label=this.el("label","field");label.append(this.el("span","field-title",`📚 ${subject} – Was muss in die Tasche?`));
+      const input=this.el("input");input.type="text";input.value=saved.join(", ");input.placeholder="z. B. Turnsachen, Trinkflasche";input.maxLength=2000;label.append(input);
+      const save=this.el("button","btn secondary","💾 Speichern");save.type="submit";
+      row.append(label,save);
+      row.addEventListener("submit",ev=>{ev.preventDefault();const items=input.value.split(",").map(s=>s.trim()).filter(Boolean);this.request("school_pack_config_save",{member_id:person.id,enabled:!!this.packSettings(person.id).enabled,subject,items});});
+      box.append(row);
+    }
+    group.append(box);
+  }
+  renderSchoolPack(page){
+    const me=this.data.members?.[0];if(!me)return;
+    const settings=this.packSettings(me.id);if(!settings.enabled)return;
+    const target=this.packDay==="today"?new Date():this.addDays(new Date(),1);
+    const iso=this.isoDate(target),absent=this.schoolAbsenceFor(me.id,iso);
+    const items=this.packItemsFor(me.id,iso),done=new Set((this.data.school_pack_checks||[]).filter(c=>c.member_id===me.id&&c.date===iso).map(c=>c.key));
+    const section=this.el("section","panel school-pack-child");
+    section.style.setProperty("--kid-color",me.color||"#3b82f6");
+    section.append(this.cardTitle("🎒 Meine Schultasche"));
+    section.append(this.el("p","small","Schau nach, was du für die Schule brauchst. Tippe auf ein Kästchen, wenn es eingepackt ist."));
+    const controls=this.el("div","school-pack-days");
+    for(const [day,label] of [["today","Heute"],["tomorrow","Morgen"]])controls.append(this.button(label,()=>{this.packDay=day;this.render();},`btn ${this.packDay===day?"":"secondary"}`));
+    section.append(controls);
+    section.append(this.el("h3",null,target.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long"})));
+    if(absent)section.append(this.el("div","school-absence-badge",this.schoolAbsenceText(absent)+" – keine Schultasche nötig."));
+    else if(!items.length)section.append(this.el("div","kid-week-empty","🎈 Für diesen Tag sind keine Sachen hinterlegt."));
+    else {
+      section.append(this.el("div","school-pack-progress",`${items.filter(i=>done.has(i.key)).length} von ${items.length} eingepackt`));
+      for(const item of items){
+        const row=this.el("label",`school-pack-item ${done.has(item.key)?"done":""}`);
+        const cb=this.el("input");cb.type="checkbox";cb.checked=done.has(item.key);cb.disabled=this.busy;
+        cb.setAttribute("aria-label",`${item.name} einpacken`);
+        cb.addEventListener("change",()=>this.request("school_pack_toggle",{date:iso,key:item.key}));
+        const text=this.el("span");text.append(this.el("strong",null,item.name),this.el("small",null,`Für ${item.subject}`));
+        row.append(cb,text);section.append(row);
+      }
+      if(items.every(i=>done.has(i.key)))section.append(this.el("div","school-pack-finished","🎉 Super! Deine Schultasche ist fertig!"));
+    }
+    page.append(section);
+  }
+
   renderSchool(page, child=false) {
     const section=this.el("section","panel school-section");
     section.append(this.cardTitle(child ? "🎒 Mein Wochenplan" : "🎒 Schule & Kindergarten"));
@@ -1334,6 +1413,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         modeSel.addEventListener("change",()=>this.request("school_mode_save",{member_id:person.id,mode:modeSel.value}).then(()=>{this.editSchool=null;}));
         choose.append(modeSel);group.append(choose);
       } else group.append(this.el("p","small",mode==="school"?"📚 Mein Stundenplan":"🧸 Mein Kindergartenplan"));
+      if(!child && mode==="school")this.renderPackSettings(group,person,mine);
       if(mode==="school"){
         const status=this.schoolNowNext(person.id);
         const banner=this.el("div","school-live-info");
@@ -1491,6 +1571,11 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       mealBtn.append(this.el("span",null,"🍽️"),this.el("strong",null,"Unser Essen"),this.el("span","mini-note","Was gibt es diese Woche?"));
       quick.append(mealBtn);
     }
+    if(!isParent && this.data.school_pack_settings?.[me?.id]?.enabled){
+      const bag=this.button("",()=>{this.tab="pack";this.render();},"child-big-btn");
+      bag.append(this.el("span",null,"🎒"),this.el("strong",null,"Schultasche"),this.el("span","mini-note","Was brauche ich morgen?"));
+      quick.append(bag);
+    }
     welcome.append(quick);
     if(overdue) welcome.append(this.el("p", "notice", `⏰ Achtung: ${overdue} ${overdue===1?"Aufgabe ist":"Aufgaben sind"} schon überfällig.`));
     page.append(welcome);
@@ -1503,6 +1588,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(this.tab === "childweek") this.renderChildWeek(page);
     if(this.tab === "routines") this.renderRoutines(page, true);
     if(this.tab === "school" && !isParent) this.renderSchool(page, true);
+    if(this.tab === "pack" && !isParent) this.renderSchoolPack(page);
     if(this.tab === "work" && isParent) this.renderWork(page, true);
     if(this.tab === "lists") this.renderLists(page, true);
     if(this.tab === "today") this.renderRoutines(page, true);

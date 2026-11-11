@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -125,7 +125,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.41",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.42",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -223,7 +223,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "school_absences": [], "work_plan": [], "work_exceptions": [], "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "school_absences": [], "school_pack_settings": {}, "school_pack_checks": [], "work_plan": [], "work_exceptions": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -241,6 +241,8 @@ def _visible_state(hub, connection):
             "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id],
             "school_modes": {member_id: state.get("school_modes", {}).get(member_id, "kindergarten")},
             "school_absences": [a for a in state.get("school_absences", []) if a.get("member_id") == member_id],
+            "school_pack_settings": {member_id: state.get("school_pack_settings", {}).get(member_id, {"enabled": False, "subjects": {}})},
+            "school_pack_checks": [c for c in state.get("school_pack_checks", []) if c.get("member_id") == member_id],
             "work_plan": [s for s in state.get("work_plan", []) if s.get("member_id") == member_id],
             "work_exceptions": [s for s in state.get("work_exceptions", []) if s.get("member_id") == member_id],
             "display_settings": state.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}),
@@ -427,6 +429,8 @@ async def ws_member_delete(hass, connection, msg):
         hub["state"]["school_plan"] = [s for s in hub["state"].get("school_plan", []) if s.get("member_id") != msg["member_id"]]
         hub["state"].setdefault("school_modes", {}).pop(msg["member_id"], None)
         hub["state"]["school_absences"] = [a for a in hub["state"].get("school_absences", []) if a.get("member_id") != msg["member_id"]]
+        hub["state"].setdefault("school_pack_settings", {}).pop(msg["member_id"], None)
+        hub["state"]["school_pack_checks"] = [c for c in hub["state"].get("school_pack_checks", []) if c.get("member_id") != msg["member_id"]]
         hub["state"]["work_plan"] = [s for s in hub["state"].get("work_plan", []) if s.get("member_id") != msg["member_id"]]
         hub["state"]["work_exceptions"] = [s for s in hub["state"].get("work_exceptions", []) if s.get("member_id") != msg["member_id"]]
         for routine in hub["state"].get("routines", []):
@@ -2110,6 +2114,108 @@ async def ws_meal_week(hass, connection, msg):
     connection.send_result(msg["id"], {"installed": True, "week_start": start.isoformat(), "days": days})
 
 
+
+
+# Optional, per-child school-bag checklist. Disabled by default; parent edits only.
+def _pack_items(state, member_id, iso):
+    settings = state.get("school_pack_settings", {}).get(member_id, {})
+    if not settings.get("enabled", False):
+        return []
+    day = date.fromisoformat(iso)
+    if any(a.get("member_id") == member_id and a.get("start", "") <= iso <= a.get("end", "") for a in state.get("school_absences", [])):
+        return []
+    weekday = day.weekday()
+    subjects = settings.get("subjects", {})
+    result = []
+    seen = set()
+    for lesson in state.get("school_plan", []):
+        if lesson.get("member_id") != member_id or int(lesson.get("weekday", -1)) != weekday:
+            continue
+        subject = str(lesson.get("title", "")).strip().casefold()
+        for item in subjects.get(subject, []):
+            key = subject + "|" + item.casefold()
+            if key not in seen:
+                seen.add(key)
+                result.append({"key": key, "name": item, "subject": lesson.get("title", "")})
+    return result
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/school_pack_config_save",
+    vol.Required("member_id"): str,
+    vol.Required("enabled"): bool,
+    vol.Required("subject"): str,
+    vol.Required("items"): [str],
+})
+@websocket_api.async_response
+async def ws_school_pack_config_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen die Packliste einstellen")
+        return
+    member_id = msg["member_id"]
+    if member_id not in {m["id"] for m in hub["state"]["members"] if m.get("role", "child") != "parent"}:
+        connection.send_error(msg["id"], "invalid_data", "Bitte ein Kind auswählen")
+        return
+    try:
+        subject = msg["subject"].strip().casefold()
+        if len(subject) > 80 or len(msg["items"]) > 25:
+            raise ValueError("Zu viele oder zu lange Angaben")
+        clean = list(dict.fromkeys(_text(item, 80) for item in msg["items"]))
+        if clean and not subject:
+            raise ValueError("Bitte ein Unterrichtsfach wählen")
+    except ValueError as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        current = hub["state"].setdefault("school_pack_settings", {}).setdefault(member_id, {"enabled": False, "subjects": {}})
+        current["enabled"] = msg["enabled"]
+        subjects = current.setdefault("subjects", {})
+        if subject:
+            if clean:
+                subjects[subject] = clean
+            else:
+                subjects.pop(subject, None)
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/school_pack_toggle",
+    vol.Required("date"): str,
+    vol.Required("key"): str,
+})
+@websocket_api.async_response
+async def ws_school_pack_toggle(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    member_id = _child_member(hub, connection) if hub else None
+    if not member_id:
+        connection.send_error(msg["id"], "unauthorized", "Nur das zugeordnete Kind darf seine Packliste abhaken")
+        return
+    try:
+        target = date.fromisoformat(msg["date"])
+        today = dt_util.now().date()
+        if target not in (today, today + timedelta(days=1)):
+            raise ValueError("Packlisten sind nur für heute und morgen verfügbar")
+        iso = target.isoformat()
+        if msg["key"] not in {i["key"] for i in _pack_items(hub["state"], member_id, iso)}:
+            raise ValueError("Dieser Gegenstand gehört nicht zur Packliste")
+    except (TypeError, ValueError) as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        checks = hub["state"].setdefault("school_pack_checks", [])
+        previous = next((x for x in checks if x.get("member_id") == member_id and x.get("date") == iso and x.get("key") == msg["key"]), None)
+        if previous:
+            checks.remove(previous)
+        else:
+            checks.append({"member_id": member_id, "date": iso, "key": msg["key"]})
+        cutoff = (dt_util.now().date() - timedelta(days=90)).isoformat()
+        hub["state"]["school_pack_checks"] = [x for x in checks if x.get("date", "") >= cutoff]
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
@@ -2118,7 +2224,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     for command in (
         ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
-        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
+        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
