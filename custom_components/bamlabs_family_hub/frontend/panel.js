@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.49";
+const FAMILY_HUB_UI_VERSION = "1.0.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();

@@ -143,7 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.49",
+            module_url=f"/{DOMAIN}_static/panel.js?v=1.0.0",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -2704,7 +2704,7 @@ async def ws_backup_export(hass, connection, msg):
     import copy
     async with hub["lock"]:
         snapshot = copy.deepcopy(hub["state"])
-    connection.send_result(msg["id"], {"format":"bamlabs-family-hub-backup", "format_version":1, "created_at":dt_util.now().isoformat(), "app_version":"0.3.49", "state":snapshot})
+    connection.send_result(msg["id"], {"format":"bamlabs-family-hub-backup", "format_version":1, "created_at":dt_util.now().isoformat(), "app_version":"1.0.0", "state":snapshot})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/system_check"})
@@ -2721,13 +2721,29 @@ async def ws_system_check(hass, connection, msg):
         bad_links=sum(v not in mids for v in state.get("child_users",{}).values())
         bad_tasks=sum(any(mid not in mids for mid in t.get("assignees",[])) for t in state.get("tasks",[]))
         bad_school=sum(x.get("member_id") not in mids for x in state.get("school_plan",[]))
+        bad_absences=sum(x.get("member_id") not in mids for x in state.get("school_absences",[]))
+        bad_work=sum(x.get("member_id") not in mids for field in ("work_plan", "work_exceptions") for x in state.get(field,[]))
+        bad_routines=sum(any(mid not in mids for mid in x.get("member_ids", [])) for x in state.get("routines",[]))
+        bad_lists=sum(any(mid not in mids for mid in x.get("member_ids", [])) for x in state.get("family_lists",[]))
+        bad_packs=sum(mid not in mids for mid in state.get("school_pack_settings", {}))
+        bad_holidays=sum(mid not in mids for mid in state.get("school_holiday_settings", {}))
+        bad_calendar_members=sum(any(mid not in mids for mid in assigned) for assigned in state.get("calendar_members", {}).values() if isinstance(assigned,list))
+        bad_tablet=bool(state.get("tablet_user_id") and state.get("tablet_user_id") in state.get("child_users", {}))
         services=set(_mobile_services(hass))
         bad_devices=sum(bool(v) and v not in services for v in state.get("push_settings",{}).get("devices",{}).values())
         counts={k:len(state.get(k,[])) for k in ("members","tasks","events","school_plan","routines","family_lists")}
     connection.send_result(msg["id"], {"counts":counts,"checks":[
       {"label":"Kinderkonten", "ok":bad_links==0,"detail":f"{bad_links} ungültige Zuordnungen"},
+      {"label":"Tablet-Konto", "ok":not bad_tablet,"detail":"Tablet-Konto darf nicht gleichzeitig einem Kind zugeordnet sein"},
       {"label":"Aufgaben", "ok":bad_tasks==0,"detail":f"{bad_tasks} ungültige Zuordnungen"},
       {"label":"Schulplan", "ok":bad_school==0,"detail":f"{bad_school} ungültige Zuordnungen"},
+      {"label":"Schulfreie Tage", "ok":bad_absences==0,"detail":f"{bad_absences} ungültige Zuordnungen"},
+      {"label":"Dienstpläne", "ok":bad_work==0,"detail":f"{bad_work} ungültige Zuordnungen"},
+      {"label":"Routinen", "ok":bad_routines==0,"detail":f"{bad_routines} ungültige Zuordnungen"},
+      {"label":"Familienlisten", "ok":bad_lists==0,"detail":f"{bad_lists} ungültige Zuordnungen"},
+      {"label":"Schultaschen-Einstellungen", "ok":bad_packs==0,"detail":f"{bad_packs} ungültige Zuordnungen"},
+      {"label":"Ferienkalender-Einstellungen", "ok":bad_holidays==0,"detail":f"{bad_holidays} ungültige Zuordnungen"},
+      {"label":"Kalenderzuordnungen", "ok":bad_calendar_members==0,"detail":f"{bad_calendar_members} ungültige Zuordnungen"},
       {"label":"Handy-Geräte", "ok":bad_devices==0,"detail":f"{bad_devices} nicht verfügbare Geräte"},
     ]})
 
