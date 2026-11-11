@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", "")}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -108,6 +108,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await _send_task_reminder(hass, force=False)
             await _send_mobile_reminders(hass)
             await _send_work_alerts(hass)
+            await _send_birthday_reminders(hass)
         def _schedule_tick(now):
             hass.async_create_task(_reminder_tick(now))
         hub_data["reminder_unsubscribe"] = async_track_time_change(
@@ -223,7 +224,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "school_absences": [], "school_pack_settings": {}, "school_pack_checks": [], "work_plan": [], "work_exceptions": [], "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "school_absences": [], "school_pack_settings": {}, "school_pack_checks": [], "birthday_settings": {"enabled": False}, "work_plan": [], "work_exceptions": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -245,6 +246,7 @@ def _visible_state(hub, connection):
             "school_pack_checks": [c for c in state.get("school_pack_checks", []) if c.get("member_id") == member_id],
             "work_plan": [s for s in state.get("work_plan", []) if s.get("member_id") == member_id],
             "work_exceptions": [s for s in state.get("work_exceptions", []) if s.get("member_id") == member_id],
+            "birthday_settings": {"enabled": False},
             "display_settings": state.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}),
             "family_lists": [l for l in state.get("family_lists", []) if member_id in l.get("member_ids", [])]}
 
@@ -373,6 +375,7 @@ async def ws_state(hass, connection, msg):
     vol.Required("color"): str,
     vol.Optional("avatar", default="🙂"): str,
     vol.Optional("role", default="child"): vol.In(("child", "parent")),
+    vol.Optional("birthday", default=""): str,
 })
 @websocket_api.async_response
 async def ws_member_save(hass, connection, msg):
@@ -382,6 +385,9 @@ async def ws_member_save(hass, connection, msg):
         return
     try:
         name, color = _text(msg["name"], 60), _color(msg["color"])
+        birthday = _optional_date(msg.get("birthday", ""))
+        if birthday and date.fromisoformat(birthday) > dt_util.now().date():
+            raise ValueError("Geburtsdatum darf nicht in der Zukunft liegen")
         avatar = msg.get("avatar", "🙂")
         if avatar not in ("🙂", "👧", "👦", "🧒", "👩", "👨", "👶", "🦊", "🐻", "🐼", "🐰", "🦄", "🐱", "🐶", "🌈", "⭐"):
             raise ValueError("Bitte ein vorhandenes Profil-Symbol wählen")
@@ -395,9 +401,9 @@ async def ws_member_save(hass, connection, msg):
             connection.send_error(msg["id"], "not_found", "Familienmitglied nicht gefunden")
             return
         if member:
-            member.update(name=name, color=color, avatar=avatar, role=msg["role"])
+            member.update(name=name, color=color, avatar=avatar, role=msg["role"], birthday=birthday)
         else:
-            members.append({"id": uuid4().hex, "name": name, "color": color, "avatar": avatar, "role": msg["role"]})
+            members.append({"id": uuid4().hex, "name": name, "color": color, "avatar": avatar, "role": msg["role"], "birthday": birthday})
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
@@ -2216,13 +2222,88 @@ async def ws_school_pack_toggle(hass, connection, msg):
     connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
+def _birthday_next(birthday, today):
+    """Next anniversary; Feb 29 occurs on Feb 28 during non-leap years."""
+    try:
+        original = date.fromisoformat(birthday)
+    except (TypeError, ValueError):
+        return None
+    def anniv(year):
+        try:
+            return date(year, original.month, original.day)
+        except ValueError:
+            return date(year, 2, 28)
+    next_day = anniv(today.year)
+    return next_day if next_day >= today else anniv(today.year + 1)
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/birthday_settings_save",
+    vol.Required("enabled"): bool,
+    vol.Required("days_before"): vol.All(vol.Coerce(int), vol.In((1, 3, 7, 14))),
+    vol.Required("hour"): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+})
+@websocket_api.async_response
+async def ws_birthday_settings_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Erinnerungen ändern")
+        return
+    async with hub["lock"]:
+        hub["state"]["birthday_settings"] = {"enabled": msg["enabled"], "days_before": msg["days_before"], "hour": msg["hour"]}
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+async def _send_birthday_reminders(hass):
+    """Optional parent-only birthday notice; at most once per day."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or "state" not in hub:
+        return
+    now = dt_util.now()
+    today = now.date()
+    async with hub["lock"]:
+        state = hub["state"]
+        settings = state.get("birthday_settings", {})
+        if not settings.get("enabled") or now.hour != int(settings.get("hour", 8)):
+            return
+        if state.get("birthday_last_sent") == today.isoformat():
+            return
+        lead = int(settings.get("days_before", 7))
+        upcoming = []
+        for person in state.get("members", []):
+            nxt = _birthday_next(person.get("birthday", ""), today)
+            if nxt is None:
+                continue
+            days = (nxt - today).days
+            if days in (0, lead):
+                upcoming.append((person.get("name", "Familienmitglied"), days))
+        if not upcoming:
+            return
+        # Commit before sending to avoid duplicate notices if the scheduler ticks again.
+        state["birthday_last_sent"] = today.isoformat()
+        await hub["store"].async_save(state)
+        devices = dict(state.get("push_settings", {}).get("devices", {}))
+        parents = [m["id"] for m in state.get("members", []) if m.get("role") == "parent"]
+    lines = [f"🎉 {name} hat heute Geburtstag!" if days == 0 else f"🎁 {name} hat in {days} Tagen Geburtstag." for name, days in upcoming]
+    message = "\n".join(lines)
+    persistent_notification.async_create(hass, message, title="Family Hub – Geburtstage", notification_id=f"{DOMAIN}_birthdays")
+    available = _mobile_services(hass)
+    for service in set(devices.get(pid, "") for pid in parents):
+        if service and service in available:
+            try:
+                await hass.services.async_call("notify", service, {"title": "🎂 Family Hub – Geburtstag", "message": message}, blocking=True)
+            except Exception:
+                pass  # The in-HA notification remains visible if the phone is offline.
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
