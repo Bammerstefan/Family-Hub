@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.47";
+const FAMILY_HUB_UI_VERSION = "0.3.48";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
+    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -50,6 +50,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.pushDevicesLoaded = false;
     this.pushSettingsOpen = false;
     this.notificationCenterOpen = false;
+    this.overviewSettingsOpen = false;
+    this.overviewDraft = null;
     this.taskFilter = "";
     this.backendVersion = "";
     this.savedNotice = "";
@@ -243,7 +245,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     style.textContent=`
       :host {display:block;min-height:100%;font-family:var(--primary-font-family,system-ui,-apple-system,sans-serif);color:var(--primary-text-color,#192238);background:var(--primary-background-color,#f5f7fb)}
       *,*:before,*:after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}
-      .page{max-width:1120px;margin:0 auto;padding:24px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:25px;font-weight:800;letter-spacing:-.6px}.small{font-size:13px;color:var(--secondary-text-color,#697386)}.nav{display:flex;gap:9px;overflow:auto;margin:23px 0}.tab{border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);padding:11px 16px;border-radius:12px;color:inherit;white-space:nowrap;font-weight:650}.tab.selected{background:#1464db;color:white;border-color:#1464db}
+      .overview-editor{display:grid;gap:9px;margin:15px 0}.overview-editor-row{display:flex;align-items:center;gap:9px;border:1px solid var(--divider-color,#dde3eb);background:var(--card-background-color,#fff);padding:10px;border-radius:12px;min-width:0}.overview-editor-row input{width:21px;height:21px;flex-shrink:0}.overview-editor-name{flex:1;min-width:0;font-weight:650}.overview-move{padding:7px 11px;min-width:38px}.page{max-width:1120px;margin:0 auto;padding:24px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:25px;font-weight:800;letter-spacing:-.6px}.small{font-size:13px;color:var(--secondary-text-color,#697386)}.nav{display:flex;gap:9px;overflow:auto;margin:23px 0}.tab{border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);padding:11px 16px;border-radius:12px;color:inherit;white-space:nowrap;font-weight:650}.tab.selected{background:#1464db;color:white;border-color:#1464db}
       .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.save-success{padding:14px 17px;border-radius:12px;background:#e4f7e9;color:#195c31;font-weight:750;margin:0 0 15px;border:1px solid #a5dfb6}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
       .week-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:9px}.week-column{border:1px solid var(--divider-color,#dfe5ee);border-radius:12px;padding:10px;min-width:0}.week-column.today{border-color:var(--primary-color,#1464db);border-width:2px}.week-card{padding:8px;margin-top:9px;background:var(--secondary-background-color,#eef1f6);border-radius:9px;border-left:4px solid #1464db;overflow-wrap:anywhere;font-size:13px}.week-card .check{width:18px;height:18px}.week-check{display:flex;gap:8px;align-items:flex-start}.week-meta{font-size:11px;opacity:.8;margin-top:4px}.week-summary{margin:10px 0 18px}.week-column h3{font-size:14px;margin:0 0 7px}.week-column .small{font-size:11px} .progress-person{border-top:1px solid var(--divider-color,#dfe5ee);padding:14px 0;display:grid;gap:8px}.progress-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}.progress-track{height:12px;background:var(--secondary-background-color,#eef1f6);border-radius:999px;overflow:hidden}.progress-fill{height:100%;border-radius:999px;transition:width .2s}.progress-person .btn{justify-self:start} 
       .child-welcome{margin-bottom:16px}.child-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}.child-stat{display:grid;gap:4px;align-content:center;border-radius:13px;background:var(--secondary-background-color,#eef1f6);padding:12px;text-align:center}.child-stat-number{font-size:24px;font-weight:800}.child-task{min-height:62px;cursor:pointer}.child-task .check{width:28px;height:28px;flex-shrink:0}.child-action{min-height:48px;margin-top:12px}
@@ -598,7 +600,12 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     section.append(this.el("h2","overview-title","🏡 Heute auf einen Blick"));
     section.append(this.el("p","overview-sub",today.toLocaleDateString("de-AT",{weekday:"long",day:"numeric",month:"long",year:"numeric"})));
     const grid=this.el("div","overview-grid");
-    const tile=(title,lines,tab,color,note)=>{
+    const configured=this.data.overview_settings||{};
+    const keys=["tasks","events","work","birthdays","school","meals"];
+    const order=Array.isArray(configured.order)&&configured.order.length===keys.length&&keys.every(k=>configured.order.includes(k))?configured.order:keys;
+    const hidden=Array.isArray(configured.hidden)?configured.hidden:[];
+    const tiles=new Map();
+    const tile=(key,title,lines,tab,color,note)=>{
       const btn=this.button("",()=>{
         this.tab=tab;
         this.render();
@@ -609,19 +616,19 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       btn.append(this.el("strong",null,title));
       for(const line of lines.slice(0,3))btn.append(this.el("div","overview-line",line));
       if(note)btn.append(this.el("div","overview-note",note));
-      grid.append(btn);
+      tiles.set(key,btn);
     };
     const taskCount=(this.data.tasks||[]).filter(t=>!this.completedForAll(t)).length;
-    tile("✅ Aufgaben",[`${due.length} heute fällig`,`${taskCount} insgesamt offen`],"tasks","#24a879","Tippen zum Erledigen");
+    tile("tasks","✅ Aufgaben",[`${due.length} heute fällig`,`${taskCount} insgesamt offen`],"tasks","#24a879","Tippen zum Erledigen");
     const timed=events.slice().sort((a,b)=>(a.time||"").localeCompare(b.time||""));
-    tile("📅 Termine",timed.length?timed.slice(0,2).map(x=>`${x.time?x.time+" · ":""}${x.event.title}`):["Heute keine Familientermine"],"calendar","#5385db",`${events.length} heute`);
+    tile("events","📅 Termine",timed.length?timed.slice(0,2).map(x=>`${x.time?x.time+" · ":""}${x.event.title}`):["Heute keine Familientermine"],"calendar","#5385db",`${events.length} heute`);
     const shifts=(this.data.members||[]).filter(m=>m.role==="parent").flatMap(m=>this.workForDate(m.id,today).map(s=>({name:m.name,shift:s}))).sort((a,b)=>(a.shift.time||"").localeCompare(b.shift.time||""));
-    tile("💼 Dienstzeiten",shifts.length?shifts.slice(0,3).map(x=>`${x.name}: ${x.shift.time?x.shift.time+(x.shift.end_time?"–"+x.shift.end_time:"")+" · ":""}${this.workKindLabel(x.shift)}`):["Heute keine Dienste eingetragen"],"work","#b180da",shifts.length>3?`+ ${shifts.length-3} weitere`:"Dienstplan öffnen");
+    tile("work","💼 Dienstzeiten",shifts.length?shifts.slice(0,3).map(x=>`${x.name}: ${x.shift.time?x.shift.time+(x.shift.end_time?"–"+x.shift.end_time:"")+" · ":""}${this.workKindLabel(x.shift)}`):["Heute keine Dienste eingetragen"],"work","#b180da",shifts.length>3?`+ ${shifts.length-3} weitere`:"Dienstplan öffnen");
     const birthdays=(this.data.members||[]).map(person=>({person,next:this.birthdayDays(person,today)})).filter(x=>x.next&&x.next.days<=30).sort((a,b)=>a.next.days-b.next.days);
-    tile("🎂 Geburtstage",birthdays.length?birthdays.slice(0,2).map(x=>`${x.person.avatar||"🎂"} ${x.person.name}: ${x.next.days===0?"heute!":x.next.days===1?"morgen":`in ${x.next.days} Tagen`}`):["In den nächsten 30 Tagen keine Geburtstage"],"members","#ea9a42","Geburtstage bearbeiten");
+    tile("birthdays","🎂 Geburtstage",birthdays.length?birthdays.slice(0,2).map(x=>`${x.person.avatar||"🎂"} ${x.person.name}: ${x.next.days===0?"heute!":x.next.days===1?"morgen":`in ${x.next.days} Tagen`}`):["In den nächsten 30 Tagen keine Geburtstage"],"members","#ea9a42","Geburtstage bearbeiten");
     const school=(this.data.school_plan||[]).filter(s=>s.weekday===(today.getDay()+6)%7 && !this.schoolAbsenceFor(s.member_id,iso) && (this.data.members||[]).some(m=>m.id===s.member_id&&m.role!=="parent"));
     const students=[...new Set(school.map(s=>s.member_id))];
-    tile("🎒 Schule & Kita",students.length?students.slice(0,2).map(id=>`${this.memberName(id)}: ${school.filter(s=>s.member_id===id).length} Einträge`):["Heute keine Schuleinträge"],"school","#dc7ca0",students.length>2?`+ ${students.length-2} weitere Kinder`:"Wochenplan öffnen");
+    tile("school","🎒 Schule & Kita",students.length?students.slice(0,2).map(id=>`${this.memberName(id)}: ${school.filter(s=>s.member_id===id).length} Einträge`):["Heute keine Schuleinträge"],"school","#dc7ca0",students.length>2?`+ ${students.length-2} weitere Kinder`:"Wochenplan öffnen");
     if(this.data._meal_planner_available){
       const mealDay=this.mealWeekData?.days?.find(d=>d.date===iso);
       const lines=[];
@@ -630,9 +637,13 @@ class BamLabsFamilyHubPanel extends HTMLElement {
           const food=mealDay[key];lines.push(`${label}: ${food?.name?`${food.symbol||"🍽️"} ${food.name}`:"Noch nichts geplant"}`);
         }
       }else lines.push(this.mealWeekBusy?"Speiseplan wird geladen …":"Speiseplan öffnen");
-      tile("🍽️ Unser Essen",lines,"meals","#e4a037","Vom BamLabs Meal Planner");
+      tile("meals","🍽️ Unser Essen",lines,"meals","#e4a037","Vom BamLabs Meal Planner");
     }
-    section.append(grid);page.append(section);
+    for(const key of order){if(!hidden.includes(key)&&tiles.has(key))grid.append(tiles.get(key));}
+    if(!grid.children.length){
+      section.append(this.el("p","small","Alle Kacheln sind ausgeblendet. Unter ⚙️ Einstellungen kannst du sie wieder aktivieren."));
+    }else section.append(grid);
+    page.append(section);
   }
   renderToday(page) {
     const pending=this.data.tasks.filter(t=>!this.completedForAll(t));
@@ -968,6 +979,43 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const intro=this.el("section","panel");
     intro.append(this.cardTitle("⚙️ Einstellungen"));
     intro.append(this.el("p",null,"Hier verbindest du Kalender und richtest den Handy-Zugang für Kinder ein."));
+    const dashboard=this.el("section","display-setting-card");
+    dashboard.append(this.cardTitle("🏡 Startseite selbst gestalten"));
+    dashboard.append(this.el("p","small","Wähle aus, welche Kacheln auf der Eltern-Startseite erscheinen, und ändere ihre Reihenfolge. Der Speiseplan wird nur bei installiertem Meal Planner angezeigt."));
+    dashboard.append(this.button(this.overviewSettingsOpen?"▴ Startseiten-Einstellungen schließen":"▾ Startseiten-Kacheln einstellen",()=>{
+      this.overviewSettingsOpen=!this.overviewSettingsOpen;
+      if(this.overviewSettingsOpen){
+        const saved=this.data.overview_settings||{};
+        const keys=["tasks","events","work","birthdays","school","meals"];
+        this.overviewDraft={order:Array.isArray(saved.order)&&saved.order.length===6&&keys.every(k=>saved.order.includes(k))?[...saved.order]:keys,hidden:[...(saved.hidden||[])]};
+      }else this.overviewDraft=null;
+      this.render();
+    },"btn secondary"));
+    if(this.overviewSettingsOpen&&this.overviewDraft){
+      const names={tasks:"✅ Aufgaben",events:"📅 Termine",work:"💼 Dienstzeiten",birthdays:"🎂 Geburtstage",school:"🎒 Schule & Kita",meals:"🍽️ Unser Essen"};
+      const rows=this.el("div","overview-editor");
+      const draft=this.overviewDraft;
+      draft.order.forEach((key,i)=>{
+        const line=this.el("div","overview-editor-row");
+        const check=this.el("input");check.type="checkbox";check.checked=!draft.hidden.includes(key);check.setAttribute("aria-label",`${names[key]} anzeigen`);
+        check.addEventListener("change",()=>{draft.hidden=check.checked?draft.hidden.filter(k=>k!==key):[...draft.hidden,key];});
+        const title=this.el("span","overview-editor-name",names[key]);
+        line.append(check,title);
+        const up=this.button("↑",()=>{if(i>0){[draft.order[i-1],draft.order[i]]=[draft.order[i],draft.order[i-1]];this.render();}},"btn secondary overview-move");
+        const down=this.button("↓",()=>{if(i<draft.order.length-1){[draft.order[i+1],draft.order[i]]=[draft.order[i],draft.order[i+1]];this.render();}},"btn secondary overview-move");
+        up.disabled=i===0;down.disabled=i===draft.order.length-1;
+        up.setAttribute("aria-label",`${names[key]} nach oben`);down.setAttribute("aria-label",`${names[key]} nach unten`);
+        line.append(up,down);rows.append(line);
+      });
+      dashboard.append(rows);
+      dashboard.append(this.button("✓ Startseite speichern",async()=>{
+        await this.request("overview_settings_save",{order:[...draft.order],hidden:[...draft.hidden]});
+        if(!this.error){this.savedNotice="✅ Startseiten-Kacheln erfolgreich gespeichert.";this.overviewSettingsOpen=false;this.overviewDraft=null;}
+        this.render();
+      }));
+    }
+    intro.append(dashboard);
+
     const display=this.el("section","display-setting-card");
     display.append(this.cardTitle("🖼️ Bildschirmmodus fürs Tablet"));
     display.append(this.el("p","small","Große Uhr und kommende Termine. Optional Familienfotos aus dem Home-Assistant-Ordner /config/www/. Der Bildschirmmodus startet nur, wenn du ihn antippst."));

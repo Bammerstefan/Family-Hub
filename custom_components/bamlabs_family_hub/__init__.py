@@ -102,7 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", []), "overview_settings": data.get("overview_settings", {"order": ["tasks", "events", "work", "birthdays", "school", "meals"], "hidden": []})}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -143,7 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.47",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.48",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -2572,6 +2572,33 @@ async def _send_birthday_reminders(hass):
                 pass  # The in-HA notification remains visible if the phone is offline.
 
 
+
+
+_OVERVIEW_KEYS = ("tasks", "events", "work", "birthdays", "school", "meals")
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/overview_settings_save",
+    vol.Required("order"): [str],
+    vol.Required("hidden"): [str],
+})
+@websocket_api.async_response
+async def ws_overview_settings_save(hass, connection, msg):
+    """Save parent-only dashboard visibility and tile order."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren dürfen die Startseite anpassen")
+        return
+    order, hidden = msg["order"], msg["hidden"]
+    if (len(order) != len(_OVERVIEW_KEYS) or set(order) != set(_OVERVIEW_KEYS)
+            or len(hidden) != len(set(hidden)) or not set(hidden).issubset(set(_OVERVIEW_KEYS))):
+        connection.send_error(msg["id"], "invalid_settings", "Ungültige Startseiten-Einstellungen")
+        return
+    async with hub["lock"]:
+        hub["state"]["overview_settings"] = {"order": order, "hidden": hidden}
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
 @websocket_api.websocket_command({
     vol.Required("type"): f"{DOMAIN}/notification_center_save",
     vol.Required("quiet_enabled"): bool,
@@ -2672,7 +2699,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_version, ws_notification_center_save, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_overview_settings_save, ws_notification_center_save, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_holiday_save, ws_school_holiday_refresh, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
