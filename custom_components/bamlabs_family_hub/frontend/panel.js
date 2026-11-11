@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.48";
+const FAMILY_HUB_UI_VERSION = "0.3.49";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -51,6 +51,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.pushSettingsOpen = false;
     this.notificationCenterOpen = false;
     this.overviewSettingsOpen = false;
+    this.maintenanceOpen = false;
+    this.maintenanceReport = null;
     this.overviewDraft = null;
     this.taskFilter = "";
     this.backendVersion = "";
@@ -975,10 +977,42 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     else agenda.append(this.el("div",null,"🌈 Heute ist Zeit für euch!"));
     inner.append(agenda);wrap.append(inner);page.append(wrap);
   }
+  async downloadBackup() {
+    try {
+      const snapshot=await this._hass.callWS({type:"bamlabs_family_hub/backup_export"});
+      const blob=new Blob([JSON.stringify(snapshot,null,2)],{type:"application/json;charset=utf-8"});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement("a");link.href=url;
+      link.download=`family-hub-sicherung-${new Date().toISOString().slice(0,10)}.json`;
+      document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+      this.error="";this.savedNotice="✅ Datensicherung zum Download bereitgestellt.";
+    }catch(e){this.error=e.message||String(e);this.savedNotice="";}
+    this.render();
+  }
+  async checkSystem() {
+    try {this.maintenanceReport=await this._hass.callWS({type:"bamlabs_family_hub/system_check"});this.error="";}
+    catch(e){this.error=e.message||String(e);}
+    this.render();
+  }
   renderSettings(page) {
     const intro=this.el("section","panel");
     intro.append(this.cardTitle("⚙️ Einstellungen"));
     intro.append(this.el("p",null,"Hier verbindest du Kalender und richtest den Handy-Zugang für Kinder ein."));
+    const maintenance=this.el("section","display-setting-card");
+    maintenance.append(this.cardTitle("🛡️ Sicherheit & Datensicherung"));
+    maintenance.append(this.el("p","small","Nur für Eltern mit Administratorrechten. Der JSON-Export enthält persönliche Familiendaten und Gerätezuordnungen. Bitte sicher aufbewahren."));
+    maintenance.append(this.button(this.maintenanceOpen?"▴ Schließen":"▾ Wartung öffnen",()=>{this.maintenanceOpen=!this.maintenanceOpen;this.render();},"btn secondary"));
+    if(this.maintenanceOpen){
+      maintenance.append(this.button("📥 Daten als JSON sichern",()=>this.downloadBackup(),"btn"));
+      maintenance.append(this.el("p","small","Für eine vollständige Wiederherstellung bitte ein Home-Assistant-Backup verwenden. JSON-Import ist aus Sicherheitsgründen noch nicht verfügbar."));
+      maintenance.append(this.button("🔍 Systemprüfung starten",()=>this.checkSystem(),"btn secondary"));
+      if(this.maintenanceReport){
+        const c=this.maintenanceReport.counts||{};
+        maintenance.append(this.el("p","small",`${c.members||0} Personen · ${c.tasks||0} Aufgaben · ${c.events||0} Termine · ${c.school_plan||0} Schulstunden · ${c.routines||0} Routinen · ${c.family_lists||0} Listen`));
+        for(const x of this.maintenanceReport.checks||[])maintenance.append(this.el("p","small",`${x.ok?"✅":"⚠️"} ${x.label}: ${x.ok?"OK":x.detail}`));
+      }
+    }
+    intro.append(maintenance);
     const dashboard=this.el("section","display-setting-card");
     dashboard.append(this.cardTitle("🏡 Startseite selbst gestalten"));
     dashboard.append(this.el("p","small","Wähle aus, welche Kacheln auf der Eltern-Startseite erscheinen, und ändere ihre Reihenfolge. Der Speiseplan wird nur bei installiertem Meal Planner angezeigt."));

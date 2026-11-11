@@ -143,7 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.48",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.49",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -2693,13 +2693,52 @@ async def _send_extra_notifications(hass):
                 await hub["store"].async_save(hub["state"])
 
 
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/backup_export"})
+@websocket_api.async_response
+async def ws_backup_export(hass, connection, msg):
+    """Read-only administrator snapshot. Restores use Home Assistant backups."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or "state" not in hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur für Administratoren")
+        return
+    import copy
+    async with hub["lock"]:
+        snapshot = copy.deepcopy(hub["state"])
+    connection.send_result(msg["id"], {"format":"bamlabs-family-hub-backup", "format_version":1, "created_at":dt_util.now().isoformat(), "app_version":"0.3.49", "state":snapshot})
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/system_check"})
+@websocket_api.async_response
+async def ws_system_check(hass, connection, msg):
+    """Structural system check without revealing private records."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or "state" not in hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur für Administratoren")
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        mids = {m.get("id") for m in state.get("members",[]) if isinstance(m,dict)}
+        bad_links=sum(v not in mids for v in state.get("child_users",{}).values())
+        bad_tasks=sum(any(mid not in mids for mid in t.get("assignees",[])) for t in state.get("tasks",[]))
+        bad_school=sum(x.get("member_id") not in mids for x in state.get("school_plan",[]))
+        services=set(_mobile_services(hass))
+        bad_devices=sum(bool(v) and v not in services for v in state.get("push_settings",{}).get("devices",{}).values())
+        counts={k:len(state.get(k,[])) for k in ("members","tasks","events","school_plan","routines","family_lists")}
+    connection.send_result(msg["id"], {"counts":counts,"checks":[
+      {"label":"Kinderkonten", "ok":bad_links==0,"detail":f"{bad_links} ungültige Zuordnungen"},
+      {"label":"Aufgaben", "ok":bad_tasks==0,"detail":f"{bad_tasks} ungültige Zuordnungen"},
+      {"label":"Schulplan", "ok":bad_school==0,"detail":f"{bad_school} ungültige Zuordnungen"},
+      {"label":"Handy-Geräte", "ok":bad_devices==0,"detail":f"{bad_devices} nicht verfügbare Geräte"},
+    ]})
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_version, ws_overview_settings_save, ws_notification_center_save, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_backup_export, ws_system_check, ws_overview_settings_save, ws_notification_center_save, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_holiday_save, ws_school_holiday_refresh, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
