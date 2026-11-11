@@ -92,7 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "work_plan": data.get("work_plan", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -107,6 +107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         async def _reminder_tick(now):
             await _send_task_reminder(hass, force=False)
             await _send_mobile_reminders(hass)
+            await _send_work_alerts(hass)
         def _schedule_tick(now):
             hass.async_create_task(_reminder_tick(now))
         hub_data["reminder_unsubscribe"] = async_track_time_change(
@@ -124,7 +125,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.38",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.40",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -222,7 +223,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "work_plan": [], "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_modes": {}, "school_absences": [], "work_plan": [], "work_exceptions": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -239,7 +240,9 @@ def _visible_state(hub, connection):
             "routine_checks": [c for c in state.get("routine_checks", []) if c.get("member_id") == member_id],
             "school_plan": [s for s in state.get("school_plan", []) if s.get("member_id") == member_id],
             "school_modes": {member_id: state.get("school_modes", {}).get(member_id, "kindergarten")},
+            "school_absences": [a for a in state.get("school_absences", []) if a.get("member_id") == member_id],
             "work_plan": [s for s in state.get("work_plan", []) if s.get("member_id") == member_id],
+            "work_exceptions": [s for s in state.get("work_exceptions", []) if s.get("member_id") == member_id],
             "display_settings": state.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}),
             "family_lists": [l for l in state.get("family_lists", []) if member_id in l.get("member_ids", [])]}
 
@@ -423,7 +426,9 @@ async def ws_member_delete(hass, connection, msg):
         hub["state"]["calendar_members"] = {k: v for k, v in hub["state"].get("calendar_members", {}).items() if v != msg["member_id"]}
         hub["state"]["school_plan"] = [s for s in hub["state"].get("school_plan", []) if s.get("member_id") != msg["member_id"]]
         hub["state"].setdefault("school_modes", {}).pop(msg["member_id"], None)
+        hub["state"]["school_absences"] = [a for a in hub["state"].get("school_absences", []) if a.get("member_id") != msg["member_id"]]
         hub["state"]["work_plan"] = [s for s in hub["state"].get("work_plan", []) if s.get("member_id") != msg["member_id"]]
+        hub["state"]["work_exceptions"] = [s for s in hub["state"].get("work_exceptions", []) if s.get("member_id") != msg["member_id"]]
         for routine in hub["state"].get("routines", []):
             routine["member_ids"] = [mid for mid in routine.get("member_ids", []) if mid != msg["member_id"]]
         hub["state"]["routine_checks"] = [c for c in hub["state"].get("routine_checks", []) if c.get("member_id") != msg["member_id"]]
@@ -1540,6 +1545,75 @@ async def ws_school_delete(hass, connection, msg):
 
 
 
+# Date-range school/kindergarten absences. Kept separate from recurring timetable.
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/school_absence_save",
+    vol.Optional("entry_id", default=""): str,
+    vol.Required("member_id"): str,
+    vol.Required("kind"): vol.In(("holiday", "illness", "free", "other")),
+    vol.Required("start"): str,
+    vol.Required("end"): str,
+    vol.Optional("note", default=""): str,
+})
+@websocket_api.async_response
+async def ws_school_absence_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Abwesenheiten bearbeiten")
+        return
+    try:
+        start = date.fromisoformat(msg["start"])
+        end = date.fromisoformat(msg["end"])
+        if start.isoformat() != msg["start"] or end.isoformat() != msg["end"]:
+            raise ValueError("Datum muss JJJJ-MM-TT sein")
+        if end < start or (end - start).days > 365:
+            raise ValueError("Bitte einen Zeitraum von maximal 366 Tagen auswählen")
+        if msg["member_id"] not in {m["id"] for m in hub["state"]["members"] if m.get("role", "child") == "child"}:
+            raise ValueError("Bitte ein Kind auswählen")
+        note = _text(msg["note"], 100) if msg["note"].strip() else ""
+    except (ValueError, TypeError) as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        entries = hub["state"].setdefault("school_absences", [])
+        old = next((x for x in entries if x.get("id") == msg["entry_id"]), None) if msg["entry_id"] else None
+        if msg["entry_id"] and not old:
+            connection.send_error(msg["id"], "not_found", "Eintrag nicht gefunden")
+            return
+        # A day may have only one effective school absence per member.
+        if any(x.get("member_id") == msg["member_id"] and x.get("id") != msg["entry_id"]
+               and x.get("start", "") <= end.isoformat() and x.get("end", "") >= start.isoformat()
+               for x in entries):
+            connection.send_error(msg["id"], "invalid_data", "Dieser Zeitraum überschneidet sich mit einer vorhandenen Abwesenheit")
+            return
+        values = {"member_id": msg["member_id"], "kind": msg["kind"],
+                  "start": start.isoformat(), "end": end.isoformat(), "note": note}
+        if old:
+            old.update(values)
+        else:
+            entries.append({"id": uuid4().hex, **values})
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/school_absence_delete", vol.Required("entry_id"): str})
+@websocket_api.async_response
+async def ws_school_absence_delete(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    async with hub["lock"]:
+        old = hub["state"].setdefault("school_absences", [])
+        remaining = [x for x in old if x.get("id") != msg["entry_id"]]
+        if len(old) == len(remaining):
+            connection.send_error(msg["id"], "not_found", "Eintrag nicht gefunden")
+            return
+        hub["state"]["school_absences"] = remaining
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
 # Weekly recurring work shifts are independent of children's school/kindergarten timetables.
 @websocket_api.websocket_command({
     vol.Required("type"): f"{DOMAIN}/work_save",
@@ -1602,6 +1676,161 @@ async def ws_work_delete(hass, connection, msg):
         hub["state"]["work_plan"] = new
         await hub["store"].async_save(hub["state"])
     connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+# Date-specific overrides supersede recurring work shifts. More than one shift may be added
+# for the same day; a leave/sick/day-off entry replaces all services on that date.
+_WORK_STATES = ("shift", "free", "vacation", "sick")
+
+
+def _work_for_date(state, member_id, day):
+    overrides = [x for x in state.get("work_exceptions", []) if x.get("member_id") == member_id and x.get("date") == day.isoformat()]
+    if overrides:
+        return sorted(overrides, key=lambda x: x.get("time", ""))
+    weekday = day.weekday()
+    return sorted((x for x in state.get("work_plan", []) if x.get("member_id") == member_id and x.get("weekday") == weekday), key=lambda x: x.get("time", ""))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/work_exception_save",
+    vol.Optional("entry_id", default=""): str,
+    vol.Required("member_id"): str,
+    vol.Required("date"): str,
+    vol.Required("kind"): vol.In(_WORK_STATES),
+    vol.Optional("title", default=""): str,
+    vol.Optional("time", default=""): str,
+    vol.Optional("end_time", default=""): str,
+})
+@websocket_api.async_response
+async def ws_work_exception_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Dienständerungen bearbeiten")
+        return
+    try:
+        chosen_date = _optional_date(msg["date"])
+        if not chosen_date:
+            raise ValueError("Datum fehlt")
+        if not any(m["id"] == msg["member_id"] and m.get("role") == "parent" for m in hub["state"]["members"]):
+            raise ValueError("Elternteil auswählen")
+        for value in (msg["time"], msg["end_time"]):
+            if value and (len(value) != 5 or datetime.strptime(value, "%H:%M").strftime("%H:%M") != value):
+                raise ValueError("Zeit im Format HH:MM eintragen")
+        if msg["kind"] == "shift":
+            title = _text(msg["title"], 80)
+            if not msg["time"] or not msg["end_time"]:
+                raise ValueError("Arbeitsbeginn und -ende angeben")
+        else:
+            title = {"free":"Frei", "vacation":"Urlaub", "sick":"Krankenstand"}[msg["kind"]]
+    except (ValueError, TypeError) as err:
+        connection.send_error(msg["id"], "invalid_data", str(err))
+        return
+    async with hub["lock"]:
+        entries = hub["state"].setdefault("work_exceptions", [])
+        found = next((e for e in entries if e.get("id") == msg["entry_id"]), None) if msg["entry_id"] else None
+        if msg["entry_id"] and not found:
+            connection.send_error(msg["id"], "not_found", "Dienständerung nicht gefunden")
+            return
+        # Prevent editing another member's entry by a guessed id; admins only but consistent.
+        if found and found.get("member_id") != msg["member_id"]:
+            connection.send_error(msg["id"], "invalid_data", "Person stimmt nicht überein")
+            return
+        if msg["kind"] != "shift":
+            entries[:] = [e for e in entries if not (e.get("member_id") == msg["member_id"] and e.get("date") == chosen_date and e is not found)]
+        else:
+            entries[:] = [e for e in entries if not (e.get("member_id") == msg["member_id"] and e.get("date") == chosen_date and e.get("kind") != "shift" and e is not found)]
+        values = {"member_id": msg["member_id"], "date": chosen_date, "kind": msg["kind"],
+                  "title": title, "time": msg["time"] if msg["kind"] == "shift" else "",
+                  "end_time": msg["end_time"] if msg["kind"] == "shift" else ""}
+        if found:
+            found.update(values)
+        else:
+            entries.append({"id": uuid4().hex, **values})
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/work_exception_delete", vol.Required("entry_id"): str})
+@websocket_api.async_response
+async def ws_work_exception_delete(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    async with hub["lock"]:
+        old = hub["state"].setdefault("work_exceptions", [])
+        new = [e for e in old if e.get("id") != msg["entry_id"]]
+        if len(new) == len(old):
+            connection.send_error(msg["id"], "not_found", "Eintrag nicht gefunden")
+            return
+        hub["state"]["work_exceptions"] = new
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/work_alert_save",
+    vol.Required("enabled"): bool,
+    vol.Required("minutes"): vol.In([10, 15, 30, 60]),
+})
+@websocket_api.async_response
+async def ws_work_alert_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    async with hub["lock"]:
+        hub["state"]["work_alert"] = {"enabled": msg["enabled"], "minutes": msg["minutes"]}
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+async def _send_work_alerts(hass):
+    """Optional reminders: at most once per shift, only to explicitly assigned phones."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or "state" not in hub:
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        settings = state.get("work_alert", {})
+        if not settings.get("enabled", False):
+            return
+        minutes = int(settings.get("minutes", 30))
+        members = [m for m in state.get("members", []) if m.get("role") == "parent"]
+        targets = dict(state.get("push_settings", {}).get("devices", {}))
+        available = set(_mobile_services(hass))
+        sent = set(state.get("work_alert_sent", []))
+        now = dt_util.now()
+        jobs = []
+        for member in members:
+            target = targets.get(member["id"], "")
+            if target not in available:
+                continue
+            for day in (now.date(), now.date() + timedelta(days=1)):
+                for work in _work_for_date(state, member["id"], day):
+                    if work.get("kind", "shift") != "shift" or not work.get("time"):
+                        continue
+                    start = datetime.combine(day, datetime.strptime(work["time"], "%H:%M").time(), tzinfo=now.tzinfo)
+                    remain = (start-now).total_seconds()/60
+                    key = f"{member['id']}:{day.isoformat()}:{work.get('id')}"
+                    if key not in sent and 0 <= remain <= minutes and remain > minutes-5.1:
+                        jobs.append((key, target, member["name"], work, day))
+    for key, target, name, work, day in jobs:
+        message = f"Hallo {name}! Dein {work['title']} beginnt heute um {work['time']} Uhr." if day == dt_util.now().date() else f"Hallo {name}! Dein {work['title']} beginnt um {work['time']} Uhr."
+        try:
+            if target.startswith("entity:"):
+                await hass.services.async_call("notify", "send_message", {"title":"Family Hub · Dienstbeginn", "message":message}, target={"entity_id":target.removeprefix("entity:")}, blocking=True)
+            else:
+                await hass.services.async_call("notify", target, {"title":"Family Hub · Dienstbeginn", "message":message, "data":{"url":"/"+PANEL_URL}}, blocking=True)
+        except Exception:
+            continue
+        async with hub["lock"]:
+            entries = hub["state"].setdefault("work_alert_sent", [])
+            if key not in entries:
+                entries.append(key)
+            # Retain only a bounded history to avoid unbounded storage growth.
+            hub["state"]["work_alert_sent"] = entries[-1000:]
+            await hub["store"].async_save(hub["state"])
 
 
 # Standalone family shopping and packing lists. Never depend on Meal Planner.
@@ -1889,7 +2118,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     for command in (
         ws_version, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
-        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete, ws_work_save, ws_work_delete,
+        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
