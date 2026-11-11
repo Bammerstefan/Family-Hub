@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.45";
+const FAMILY_HUB_UI_VERSION = "0.3.46";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
+    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -796,6 +796,23 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         }
       }
     }
+    // Holiday ranges come from the regional cache, not duplicated as editable events.
+    if(this.tab === "calendar") {
+      for(const person of (this.data.members||[]).filter(m=>m.role!=="parent")) {
+        const cfg=(this.data.school_holiday_settings||{})[person.id];
+        if(!cfg?.enabled)continue;
+        const entries=(this.data.school_holiday_cache||{})[`${cfg.country}:${cfg.region}`]?.entries||[];
+        for(const holiday of entries) {
+          if(holiday.end<from||holiday.start>to)continue;
+          if(holiday.kind==="school"&&cfg.school===false||holiday.kind==="public"&&cfg.public===false)continue;
+          const manual=(this.data.school_absences||[]).some(a=>a.member_id===person.id&&a.start<=holiday.end&&a.end>=holiday.start);
+          if(manual)continue;
+          const ev={id:`holiday:${person.id}:${holiday.start}:${holiday.kind}`,title:`${holiday.kind==="school"?"🏖️":"📅"} ${holiday.name} · ${person.name}`,
+            members:[person.id],all_day:true,start:holiday.start+"T00:00",end:holiday.end+"T23:59",external:true,source:"Ferienkalender",description:"Automatisch geladen – nur lesen"};
+          out.push({event:ev,start:holiday.start,end:holiday.end,time:""});
+        }
+      }
+    }
     // Work shifts and absences appear read-only in the family calendar only.
     if(this.tab === "calendar") {
     const datesFrom=new Date(`${from}T00:00:00`),datesTo=new Date(`${to}T00:00:00`);
@@ -1347,7 +1364,14 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   }
 
   schoolAbsenceFor(memberId, iso) {
-    return (this.data.school_absences||[]).find(a=>a.member_id===memberId && a.start<=iso && a.end>=iso)||null;
+    const manual=(this.data.school_absences||[]).find(a=>a.member_id===memberId && a.start<=iso && a.end>=iso);
+    if(manual)return manual;
+    const cfg=(this.data.school_holiday_settings||{})[memberId];
+    if(!cfg?.enabled)return null;
+    const cached=(this.data.school_holiday_cache||{})[`${cfg.country}:${cfg.region}`];
+    return (cached?.entries||[]).filter(h=>(h.kind==="school"&&cfg.school!==false)||(h.kind==="public"&&cfg.public!==false))
+      .filter(h=>h.start<=iso&&h.end>=iso)
+      .map(h=>({kind:h.kind==="school"?"holiday":"free",note:h.name,start:h.start,end:h.end,automatic:true}))[0]||null;
   }
   schoolAbsenceText(a) {
     const labels={holiday:"🏖️ Ferien",illness:"🤒 Krank",free:"🏡 Schulfrei / Feiertag",other:"📌 Abwesend"};
@@ -1364,6 +1388,44 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const next=lessons.find(e=>e.time>clock)||null;
     return {current,next,hasLessons:lessons.length>0};
   }
+
+  renderAutoHolidays(section, people) {
+    const wrap=this.el("details","school-absence-panel");
+    wrap.open=!!this.autoHolidayOpen;
+    wrap.addEventListener("toggle",()=>{this.autoHolidayOpen=wrap.open;});
+    wrap.append(this.el("summary",null,"🌍 Schulferien & Feiertage automatisch · Österreich / Deutschland"));
+    wrap.append(this.el("p","small","Freiwillig pro Kind. Wähle Land und Bundesland. Bei aktivierter Funktion werden verfügbare Ferien und Feiertage automatisch geladen und lokal gespeichert. Eigene schulfreie Tage bleiben erhalten und haben Vorrang."));
+    const regions={AT:[["AT-1","Burgenland"],["AT-2","Kärnten"],["AT-3","Niederösterreich"],["AT-4","Oberösterreich"],["AT-5","Salzburg"],["AT-6","Steiermark"],["AT-7","Tirol"],["AT-8","Vorarlberg"],["AT-9","Wien"]],DE:[["DE-BW","Baden-Württemberg"],["DE-BY","Bayern"],["DE-BE","Berlin"],["DE-BB","Brandenburg"],["DE-HB","Bremen"],["DE-HH","Hamburg"],["DE-HE","Hessen"],["DE-MV","Mecklenburg-Vorpommern"],["DE-NI","Niedersachsen"],["DE-NW","Nordrhein-Westfalen"],["DE-RP","Rheinland-Pfalz"],["DE-SL","Saarland"],["DE-SN","Sachsen"],["DE-ST","Sachsen-Anhalt"],["DE-SH","Schleswig-Holstein"],["DE-TH","Thüringen"]]};
+    const settings=this.data.school_holiday_settings||{};
+    for(const person of people){
+      const cfg=settings[person.id]||{enabled:false,country:"AT",region:"AT-4",school:true,public:true};
+      const box=this.el("div","school-absence-row");box.style.display="block";box.style.borderLeft=`5px solid ${person.color||"#1d9caa"}`;
+      box.append(this.el("strong",null,`${person.avatar||"🎒"} ${person.name}`));
+      const form=this.el("form","formgrid");
+      const addSelect=(name,values,selected)=>{const label=this.el("label","field");label.append(this.el("span","field-title",name));const sel=this.el("select");values.forEach(([v,t])=>{const o=this.el("option",null,t);o.value=v;sel.append(o);});sel.value=selected;label.append(sel);form.append(label);return sel;};
+      const enabled=addSelect("Automatischer Kalender",[["off","Aus – nichts automatisch laden"],["on","Ein – Ferien und Feiertage anzeigen"]],cfg.enabled?"on":"off");
+      const country=addSelect("Land",[["AT","🇦🇹 Österreich"],["DE","🇩🇪 Deutschland"]],cfg.country||"AT");
+      const region=addSelect("Bundesland",regions[country.value],cfg.region||"AT-4");
+      const updateRegions=()=>{const old=region.value;region.replaceChildren();regions[country.value].forEach(([v,t])=>{const o=this.el("option",null,t);o.value=v;region.append(o);});region.value=regions[country.value].some(([v])=>v===old)?old:regions[country.value][0][0];};
+      country.addEventListener("change",updateRegions);
+      const school=addSelect("Schulferien",[["yes","Anzeigen"],["no","Nicht anzeigen"]],cfg.school!==false?"yes":"no");
+      const publicH=addSelect("Gesetzliche Feiertage",[["yes","Anzeigen"],["no","Nicht anzeigen"]],cfg.public!==false?"yes":"no");
+      const submit=this.el("button","btn","💾 Ferien-Einstellungen speichern");submit.type="submit";form.append(submit);
+      form.addEventListener("submit",e=>{e.preventDefault();this.request("school_holiday_save",{member_id:person.id,enabled:enabled.value==="on",country:country.value,region:region.value,school:school.value==="yes",public:publicH.value==="yes"}).then(()=>{this.autoHolidayOpen=true;});});
+      box.append(form);
+      if(cfg.enabled){
+        const cached=(this.data.school_holiday_cache||{})[`${cfg.country}:${cfg.region}`];
+        const status=!cached?"⏳ Noch keine Daten geladen (bitte kurz warten und aktualisieren).":`📅 Letzter Abruf: ${cached.updated||"unbekannt"} · ${(cached.entries||[]).length} Termine${cached.status==="partial"?" · Teilweise geladen":""}`;
+        box.append(this.el("div","small",status));
+        if(cached?.entries?.length){const future=cached.entries.filter(x=>x.end>=this.isoDate(new Date())).slice().sort((a,b)=>a.start.localeCompare(b.start)).slice(0,4);for(const h of future)box.append(this.el("div","small",`${h.kind==="school"?"🏖️":"📅"} ${h.name}: ${h.start}${h.end!==h.start?" bis "+h.end:""}`));}
+      }
+      wrap.append(box);
+    }
+    const actions=this.el("div","actions");actions.append(this.button("🔄 Ferientermine neu laden",()=>this.request("school_holiday_refresh",{}).then(()=>{this.autoHolidayOpen=true;}),"btn secondary"));wrap.append(actions);
+    wrap.append(this.el("p","small","Quelle: OpenHolidays API (Open Data). Internetzugang beim Abruf erforderlich. Schulautonome Tage, einzelne Schultypen und regionale Ausnahmen bitte bei den manuellen Abwesenheiten prüfen und ergänzen."));
+    section.append(wrap);
+  }
+
   renderSchoolAbsences(section,people) {
     const area=this.el("div","school-absence-panel");
     const toggle=this.button(`${this.schoolAbsenceOpen?"▾":"▸"} 🏖️ Ferien, Feiertage & Abwesenheiten`,()=>{this.schoolAbsenceOpen=!this.schoolAbsenceOpen;this.render();},"btn secondary");
@@ -1482,7 +1544,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const entries=(this.data.school_plan||[]).slice().sort((a,b)=>Number(a.weekday)-Number(b.weekday)||(a.time||"").localeCompare(b.time||"")||(a.title||"").localeCompare(b.title||""));
     const currentDay=(new Date().getDay()+6)%7;
     const people=(this.data.members||[]).filter(m=>m.role!=="parent");
-    if(!child && people.length)this.renderSchoolAbsences(section,people);
+    if(!child && people.length){this.renderAutoHolidays(section,people);this.renderSchoolAbsences(section,people);}
     for(const person of people){
       const mine=entries.filter(x=>x.member_id===person.id);
       const savedMode=(this.data.school_modes||{})[person.id];

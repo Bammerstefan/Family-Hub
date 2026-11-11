@@ -7,7 +7,9 @@ from calendar import monthrange
 from homeassistant.util import dt as dt_util
 from pathlib import Path
 from uuid import uuid4
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlencode
+import logging
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 import voluptuous as vol
 from homeassistant.components import panel_custom, websocket_api
@@ -20,6 +22,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, PANEL_URL, STORAGE_KEY, STORAGE_VERSION, TITLE
+
+_LOGGER = logging.getLogger(__name__)
+# ISO 3166-2 codes used by OpenHolidays. Never send arbitrary user URLs.
+HOLIDAY_REGIONS = {
+    "AT": {"AT-1", "AT-2", "AT-3", "AT-4", "AT-5", "AT-6", "AT-7", "AT-8", "AT-9"},
+    "DE": {"DE-BW", "DE-BY", "DE-BE", "DE-BB", "DE-HB", "DE-HH", "DE-HE", "DE-MV", "DE-NI", "DE-NW", "DE-RP", "DE-SL", "DE-SN", "DE-ST", "DE-SH", "DE-TH"},
+}
+
 
 
 def _text(value, maximum=180):
@@ -92,7 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", "")}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", "")}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -102,6 +112,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # frontend loads the new calendar form but event_save is unknown.
     _register_commands_once(hass)
 
+    # Download the selected regional calendar without blocking Home Assistant startup.
+    if any(c.get("enabled") for c in state["school_holiday_settings"].values() if isinstance(c, dict)):
+        hass.async_create_task(_refresh_school_holidays(hass))
+
     # Scheduled reminder works when the Family Hub browser is closed.
     if not hub_data.get("reminder_unsubscribe"):
         async def _reminder_tick(now):
@@ -109,6 +123,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await _send_mobile_reminders(hass)
             await _send_work_alerts(hass)
             await _send_birthday_reminders(hass)
+            if now.hour == 3 and now.minute < 5:
+                await _refresh_school_holidays(hass)
         def _schedule_tick(now):
             hass.async_create_task(_reminder_tick(now))
         hub_data["reminder_unsubscribe"] = async_track_time_change(
@@ -126,7 +142,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.45",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.46",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -224,7 +240,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_years": [], "school_year_active": {}, "school_modes": {}, "school_absences": [], "school_pack_settings": {}, "school_pack_checks": [], "birthday_settings": {"enabled": False}, "work_plan": [], "work_exceptions": [], "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "routine_checks": [], "school_plan": [], "school_years": [], "school_year_active": {}, "school_modes": {}, "school_absences": [], "school_holiday_settings": {}, "school_holiday_cache": {}, "school_pack_settings": {}, "school_pack_checks": [], "birthday_settings": {"enabled": False}, "work_plan": [], "work_exceptions": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -243,6 +259,8 @@ def _visible_state(hub, connection):
             "school_year_active": {member_id: state.get("school_year_active", {}).get(member_id, "")},
             "school_modes": {member_id: state.get("school_modes", {}).get(member_id, "kindergarten")},
             "school_absences": [a for a in state.get("school_absences", []) if a.get("member_id") == member_id],
+            "school_holiday_settings": {member_id: state.get("school_holiday_settings", {}).get(member_id, {})},
+            "school_holiday_cache": _child_holiday_cache(state, member_id),
             "school_pack_settings": {member_id: state.get("school_pack_settings", {}).get(member_id, {"enabled": False, "subjects": {}})},
             "school_pack_checks": [c for c in state.get("school_pack_checks", []) if c.get("member_id") == member_id],
             "work_plan": [s for s in state.get("work_plan", []) if s.get("member_id") == member_id],
@@ -438,6 +456,7 @@ async def ws_member_delete(hass, connection, msg):
         hub["state"].setdefault("school_year_active", {}).pop(msg["member_id"], None)
         hub["state"].setdefault("school_modes", {}).pop(msg["member_id"], None)
         hub["state"]["school_absences"] = [a for a in hub["state"].get("school_absences", []) if a.get("member_id") != msg["member_id"]]
+        hub["state"].get("school_holiday_settings", {}).pop(msg["member_id"], None)
         hub["state"].setdefault("school_pack_settings", {}).pop(msg["member_id"], None)
         hub["state"]["school_pack_checks"] = [c for c in hub["state"].get("school_pack_checks", []) if c.get("member_id") != msg["member_id"]]
         hub["state"]["work_plan"] = [s for s in hub["state"].get("work_plan", []) if s.get("member_id") != msg["member_id"]]
@@ -1630,6 +1649,153 @@ async def ws_school_delete(hass, connection, msg):
 
 
 
+
+# Optional school holidays and statutory holidays from OpenHolidays (ODbL).
+# Cached per region and always read-only; manually entered absences take precedence.
+def _holiday_key(settings):
+    return f"{settings.get('country', '')}:{settings.get('region', '')}"
+
+
+def _child_holiday_cache(state, member_id):
+    cfg = state.get("school_holiday_settings", {}).get(member_id, {})
+    key = _holiday_key(cfg)
+    if not cfg.get("enabled") or not cfg.get("country"):
+        return {}
+    return {key: state.get("school_holiday_cache", {}).get(key, {})}
+
+
+def _school_absence_at(state, member_id, iso):
+    manual = next((a for a in state.get("school_absences", [])
+                   if a.get("member_id") == member_id and a.get("start", "") <= iso <= a.get("end", "")), None)
+    if manual:
+        return manual
+    cfg = state.get("school_holiday_settings", {}).get(member_id, {})
+    if not cfg.get("enabled"):
+        return None
+    for holiday in state.get("school_holiday_cache", {}).get(_holiday_key(cfg), {}).get("entries", []):
+        if (holiday.get("kind") == "school" and not cfg.get("school", True)) or (holiday.get("kind") == "public" and not cfg.get("public", True)):
+            continue
+        if holiday.get("start", "") <= iso <= holiday.get("end", ""):
+            return {"kind": "holiday" if holiday.get("kind") == "school" else "free", "note": holiday.get("name", ""),
+                    "start": holiday["start"], "end": holiday["end"], "automatic": True}
+    return None
+
+
+def _holiday_is_regional(item, region):
+    if item.get("nationwide") is True:
+        return True
+    subdivisions = item.get("subdivisions") or []
+    if not subdivisions:
+        return True
+    return any((sub.get("code") if isinstance(sub, dict) else sub) == region for sub in subdivisions)
+
+
+async def _refresh_school_holidays(hass, force=False):
+    hub = hass.data.get(DOMAIN)
+    if not hub or "state" not in hub:
+        return
+    configurations = list(hub["state"].get("school_holiday_settings", {}).values())
+    selected = {(_holiday_key(cfg), cfg["country"], cfg["region"]) for cfg in configurations
+                if isinstance(cfg, dict) and cfg.get("enabled") and cfg.get("region") in HOLIDAY_REGIONS.get(cfg.get("country"), ())}
+    if not selected:
+        return
+    now = dt_util.now().date()
+    from_date = (now - timedelta(days=31)).isoformat()
+    to_date = (now + timedelta(days=540)).isoformat()
+    session = async_get_clientsession(hass)
+    for key, country, region in selected:
+        current = hub["state"].get("school_holiday_cache", {}).get(key, {})
+        if not force and current.get("updated", "") >= (now - timedelta(days=5)).isoformat() and current.get("valid_to", "") >= to_date:
+            continue
+        all_entries = []
+        success = 0
+        for kind, route in (("school", "SchoolHolidays"), ("public", "PublicHolidays")):
+            params = {"countryIsoCode": country, "validFrom": from_date, "validTo": to_date, "languageIsoCode": "DE"}
+            if kind == "school":
+                params["subdivisionCode"] = region
+            url = "https://openholidaysapi.org/" + route + "?" + urlencode(params)
+            try:
+                import aiohttp
+                async with session.get(url, headers={"Accept": "application/json"}, timeout=aiohttp.ClientTimeout(total=15)) as response:
+                    response.raise_for_status()
+                    raw = await response.json()
+                if not isinstance(raw, list):
+                    raise ValueError("Unerwartetes Antwortformat")
+                entries = []
+                for item in raw:
+                    if not isinstance(item, dict) or not _holiday_is_regional(item, region):
+                        continue
+                    start = item.get("startDate")
+                    end = item.get("endDate")
+                    try:
+                        date.fromisoformat(start)
+                        date.fromisoformat(end)
+                    except (ValueError, TypeError):
+                        continue
+                    names = item.get("name") or []
+                    if isinstance(names, list):
+                        name = next((n.get("text") for n in names if isinstance(n, dict) and str(n.get("language", "")).lower() == "de"), None)
+                        name = name or next((n.get("text") for n in names if isinstance(n, dict)), None)
+                    else:
+                        name = str(names)
+                    entries.append({"kind": kind, "start": start, "end": end, "name": str(name or ("Ferien" if kind == "school" else "Feiertag"))[:100]})
+                all_entries.extend(entries)
+                success += 1
+            except (OSError, ValueError, TimeoutError, aiohttp.ClientError) as err:
+                _LOGGER.warning("Ferienabruf für %s (%s) fehlgeschlagen: %s", key, kind, err)
+                # Keep cached entries of the unavailable category rather than losing known holidays.
+                all_entries.extend(e for e in current.get("entries", []) if e.get("kind") == kind)
+        if success:
+            async with hub["lock"]:
+                hub["state"].setdefault("school_holiday_cache", {})[key] = {
+                    "entries": all_entries, "updated": now.isoformat(), "valid_to": to_date,
+                    "status": "ok" if success == 2 else "partial",
+                }
+                await hub["store"].async_save(hub["state"])
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/school_holiday_save",
+    vol.Required("member_id"): str,
+    vol.Required("enabled"): bool,
+    vol.Required("country"): vol.In(("AT", "DE")),
+    vol.Required("region"): str,
+    vol.Optional("school", default=True): bool,
+    vol.Optional("public", default=True): bool,
+})
+@websocket_api.async_response
+async def ws_school_holiday_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern können Ferien automatisch aktivieren")
+        return
+    if msg["region"] not in HOLIDAY_REGIONS[msg["country"]]:
+        connection.send_error(msg["id"], "invalid_data", "Ungültiges Bundesland")
+        return
+    if msg["member_id"] not in {m["id"] for m in hub["state"].get("members", []) if m.get("role", "child") != "parent"}:
+        connection.send_error(msg["id"], "invalid_data", "Kind nicht gefunden")
+        return
+    async with hub["lock"]:
+        hub["state"].setdefault("school_holiday_settings", {})[msg["member_id"]] = {
+            "enabled": msg["enabled"], "country": msg["country"], "region": msg["region"],
+            "school": msg["school"], "public": msg["public"],
+        }
+        await hub["store"].async_save(hub["state"])
+    if msg["enabled"]:
+        hass.async_create_task(_refresh_school_holidays(hass, force=True))
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/school_holiday_refresh"})
+@websocket_api.async_response
+async def ws_school_holiday_refresh(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern")
+        return
+    await _refresh_school_holidays(hass, force=True)
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
 # Date-range school/kindergarten absences. Kept separate from recurring timetable.
 @websocket_api.websocket_command({
     vol.Required("type"): f"{DOMAIN}/school_absence_save",
@@ -2203,7 +2369,7 @@ def _pack_items(state, member_id, iso):
     if not settings.get("enabled", False):
         return []
     day = date.fromisoformat(iso)
-    if any(a.get("member_id") == member_id and a.get("start", "") <= iso <= a.get("end", "") for a in state.get("school_absences", [])):
+    if _school_absence_at(state, member_id, iso):
         return []
     weekday = day.weekday()
     subjects = settings.get("subjects", {})
@@ -2380,7 +2546,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     for command in (
         ws_version, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
-        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
+        ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_holiday_save, ws_school_holiday_refresh, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
         ws_reward_save, ws_reward_delete, ws_reward_redeem,
         ws_event_save, ws_event_delete,
