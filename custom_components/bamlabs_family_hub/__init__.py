@@ -102,7 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", "")}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", [])}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -123,6 +123,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await _send_mobile_reminders(hass)
             await _send_work_alerts(hass)
             await _send_birthday_reminders(hass)
+            await _send_extra_notifications(hass)
             if now.hour == 3 and now.minute < 5:
                 await _refresh_school_holidays(hass)
         def _schedule_tick(now):
@@ -142,7 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.46",
+            module_url=f"/{DOMAIN}_static/panel.js?v=0.3.47",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -1054,6 +1055,34 @@ async def ws_child_event_create(hass, connection, msg):
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
+def _notify_category(state, member_id, category):
+    """Missing values retain legacy reminders; new kinds start disabled."""
+    defaults = {"tasks": True, "birthday": True, "work": True, "schoolbag": False, "events": False}
+    per_person = state.get("notification_center", {}).get("categories", {}).get(member_id, {})
+    return per_person.get(category, defaults.get(category, False)) is True
+
+
+def _notify_in_quiet(state, now):
+    """Quiet interval supports a range crossing midnight (local HA time)."""
+    cfg = state.get("notification_center", {})
+    if not cfg.get("quiet_enabled", False):
+        return False
+    start, end = int(cfg.get("quiet_start", 21)), int(cfg.get("quiet_end", 7))
+    if start == end:
+        return False
+    return (start <= now.hour < end) if start < end else (now.hour >= start or now.hour < end)
+
+
+async def _send_to_mobile(hass, target, title, message):
+    """Shared HA companion-app notification sender."""
+    if target.startswith("entity:"):
+        await hass.services.async_call("notify", "send_message", {"title": title, "message": message},
+                                       target={"entity_id": target.removeprefix("entity:")}, blocking=True)
+    else:
+        await hass.services.async_call("notify", target, {"title": title, "message": message,
+            "data": {"url": "/" + PANEL_URL, "clickAction": "/" + PANEL_URL}}, blocking=True)
+
+
 async def _send_task_reminder(hass, force=False):
     """Create one HA notification per configured day; no child data exposed via WS."""
     hub = hass.data.get(DOMAIN)
@@ -1181,6 +1210,8 @@ async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
         if not service or service not in available:
             if test_member == mid:
                 errors.append("Kein verfügbares Handy für dieses Familienmitglied ausgewählt")
+            continue
+        if test_member is None and (not _notify_category(state, mid, "tasks") or _notify_in_quiet(state, now)):
             continue
         if test_member is None and last.get(mid) == today:
             continue
@@ -2054,6 +2085,8 @@ async def _send_work_alerts(hass):
         now = dt_util.now()
         jobs = []
         for member in members:
+            if not _notify_category(state, member["id"], "work") or _notify_in_quiet(state, now):
+                continue
             target = targets.get(member["id"], "")
             if target not in available:
                 continue
@@ -2525,7 +2558,8 @@ async def _send_birthday_reminders(hass):
         state["birthday_last_sent"] = today.isoformat()
         await hub["store"].async_save(state)
         devices = dict(state.get("push_settings", {}).get("devices", {}))
-        parents = [m["id"] for m in state.get("members", []) if m.get("role") == "parent"]
+        parents = [m["id"] for m in state.get("members", []) if m.get("role") == "parent"
+                   and _notify_category(state, m["id"], "birthday") and not _notify_in_quiet(state, now)]
     lines = [f"🎉 {name} hat heute Geburtstag!" if days == 0 else f"🎁 {name} hat in {days} Tagen Geburtstag." for name, days in upcoming]
     message = "\n".join(lines)
     persistent_notification.async_create(hass, message, title="Family Hub – Geburtstage", notification_id=f"{DOMAIN}_birthdays")
@@ -2538,13 +2572,107 @@ async def _send_birthday_reminders(hass):
                 pass  # The in-HA notification remains visible if the phone is offline.
 
 
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/notification_center_save",
+    vol.Required("quiet_enabled"): bool,
+    vol.Required("quiet_start"): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+    vol.Required("quiet_end"): vol.All(vol.Coerce(int), vol.Range(min=0, max=23)),
+    vol.Required("categories"): dict,
+})
+@websocket_api.async_response
+async def ws_notification_center_save(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Erinnerungen ändern")
+        return
+    categories = msg["categories"]
+    members = {member["id"] for member in hub["state"]["members"]}
+    allowed = {"tasks", "birthday", "work", "schoolbag", "events"}
+    if len(categories) > 50 or any(mid not in members or not isinstance(kinds, dict) or
+        len(kinds) > 5 or any(kind not in allowed or type(value) is not bool
+            for kind, value in kinds.items()) for mid, kinds in categories.items()):
+        connection.send_error(msg["id"], "invalid_settings", "Ungültige Benachrichtigungseinstellungen")
+        return
+    async with hub["lock"]:
+        hub["state"]["notification_center"] = {
+            "quiet_enabled": msg["quiet_enabled"], "quiet_start": msg["quiet_start"],
+            "quiet_end": msg["quiet_end"], "categories": categories,
+        }
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+async def _send_extra_notifications(hass):
+    """Opt-in schoolbag and event alerts, protected from repeats across restarts."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or "state" not in hub:
+        return
+    now = dt_util.now()
+    async with hub["lock"]:
+        state = hub["state"]
+        if _notify_in_quiet(state, now):
+            return
+        members = list(state.get("members", []))
+        devices = dict(state.get("push_settings", {}).get("devices", {}))
+        events = list(state.get("events", []))
+        already = set(state.get("extra_alert_sent", []))
+        available = set(_mobile_services(hass))
+        messages = []
+        today = now.date().isoformat()
+        tomorrow = (now.date() + timedelta(days=1)).isoformat()
+        for member in members:
+            mid = member["id"]
+            target = devices.get(mid, "")
+            if not target or target not in available:
+                continue
+            # Schoolbag reminder only in the evening before a day with actual items.
+            if _notify_category(state, mid, "schoolbag") and now.hour >= 18:
+                items = _pack_items(state, mid, tomorrow)
+                outstanding = {i["key"]: i for i in items}
+                for check in state.get("school_pack_checks", []):
+                    if check.get("member_id") == mid and check.get("date") == tomorrow:
+                        outstanding.pop(check.get("key"), None)
+                key = f"schoolbag:{mid}:{tomorrow}"
+                if outstanding and key not in already:
+                    names = ", ".join(i["name"] for i in list(outstanding.values())[:7])
+                    messages.append((key, target, "🎒 Schultasche für morgen", f"Hallo {member['name']}! Für morgen einpacken: {names}."))
+            # Family Hub appointments only; Google calendar remains read-only and has its own notifications.
+            if _notify_category(state, mid, "events"):
+                for event in events:
+                    if mid not in event.get("members", []) or event.get("all_day"):
+                        continue
+                    try:
+                        start = datetime.fromisoformat(event.get("start", ""))
+                        if start.tzinfo is None:
+                            start = start.replace(tzinfo=now.tzinfo)
+                        minutes = (start - now).total_seconds() / 60
+                    except (TypeError, ValueError):
+                        continue
+                    key = f"event:{mid}:{event.get('id', '')}:{start.isoformat()}"
+                    # The five-minute scheduler can catch the whole preceding hour.
+                    if 0 < minutes <= 60 and key not in already:
+                        messages.append((key, target, "📅 Termin in Kürze", f"Hallo {member['name']}! {event.get('title', 'Termin')[:100]} beginnt um {start.strftime('%H:%M')} Uhr."))
+    for key, target, title, message in messages:
+        try:
+            await _send_to_mobile(hass, target, title, message)
+        except Exception as err:
+            _LOGGER.warning("Family Hub konnte Erinnerung nicht versenden: %s", err)
+            continue
+        async with hub["lock"]:
+            history = hub["state"].setdefault("extra_alert_sent", [])
+            if key not in history:
+                history.append(key)
+                hub["state"]["extra_alert_sent"] = history[-1500:]
+                await hub["store"].async_save(hub["state"])
+
+
 def _register_commands_once(hass: HomeAssistant) -> None:
     """Ensure all websocket commands are available to the configured panel."""
     hub_data = hass.data.setdefault(DOMAIN, {})
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_version, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_notification_center_save, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_holiday_save, ws_school_holiday_refresh, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,

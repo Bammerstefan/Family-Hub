@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "0.3.46";
+const FAMILY_HUB_UI_VERSION = "0.3.47";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -49,6 +49,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this.pushDevices = [];
     this.pushDevicesLoaded = false;
     this.pushSettingsOpen = false;
+    this.notificationCenterOpen = false;
     this.taskFilter = "";
     this.backendVersion = "";
     this.savedNotice = "";
@@ -1092,6 +1093,38 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     push.append(pushActions);
     }
     intro.append(push);
+
+    // Central notification preferences do not change the existing device assignments.
+    const center=this.el("section","panel");
+    center.append(this.button(this.notificationCenterOpen?"🔔 Benachrichtigungszentrale ▴ Zuklappen":"🔔 Benachrichtigungszentrale ▾ Aufklappen",()=>{this.notificationCenterOpen=!this.notificationCenterOpen;this.render();},"push-toggle"));
+    if(this.notificationCenterOpen){
+      center.append(this.el("p","small","Wähle für jedes Familienmitglied, welche Nachrichten aufs bereits zugeordnete Handy kommen dürfen. Aufgaben, Geburtstage und Dienstbeginn behalten ihre bisherigen Einstellungen. Neue Schultaschen- und Terminerinnerungen sind standardmäßig aus. Die Benachrichtigungsarten benötigen zusätzlich ihre jeweilige Aktivierung und ein zugeordnetes Handy."));
+      const cfg=this.data.notification_center||{};
+      const qRow=this.el("label","person-choice");const qOn=this.el("input");qOn.type="checkbox";qOn.checked=!!cfg.quiet_enabled;
+      qRow.append(qOn,this.el("span",null,"🌙 Ruhezeit für Handy-Nachrichten aktivieren"));center.append(qRow);
+      const qTimes=this.el("div","grid two");
+      const makeHour=(title,val)=>{const field=this.el("label","field");field.append(this.el("span","field-title",title));const select=this.el("select");for(let h=0;h<24;h++){const opt=this.el("option",null,`${String(h).padStart(2,"0")}:00 Uhr`);opt.value=String(h);select.append(opt);}select.value=String(val);field.append(select);qTimes.append(field);return select;};
+      const qStart=makeHour("Ab",cfg.quiet_start??21),qEnd=makeHour("Bis",cfg.quiet_end??7);
+      center.append(qTimes);
+      center.append(this.el("p","small","Während der Ruhezeit werden keine automatischen Handy-Erinnerungen gesendet. Terminerinnerungen können dadurch entfallen, wenn der Termin während der Ruhezeit beginnt. Testnachrichten kannst du weiterhin manuell versenden."));
+      const categories={tasks:"✅ Offene Aufgaben",schoolbag:"🎒 Schultasche am Vorabend",events:"📅 Eigene Family-Hub-Termine",birthday:"🎂 Geburtstage (nur Eltern)",work:"💼 Dienstbeginn (nur Eltern)"};
+      const checkboxes={};
+      for(const m of this.data.members||[]){
+        const panel=this.el("section","push-person-card");panel.style.setProperty("--person-accent",/^#[0-9a-fA-F]{6}$/.test(m.color||"")?m.color:"#6b90d6");
+        panel.append(this.el("strong",null,`${m.avatar||"🙂"} ${m.name}`));
+        const map={};for(const [id,title] of Object.entries(categories)){
+          if((id==="birthday"||id==="work")&&m.role!=="parent")continue;
+          const line=this.el("label","person-choice"),cb=this.el("input");cb.type="checkbox";
+          cb.checked=(cfg.categories?.[m.id]?.[id])??(id==="tasks"||id==="birthday"||id==="work");
+          line.append(cb,this.el("span",null,title));panel.append(line);map[id]=cb;
+        }checkboxes[m.id]=map;center.append(panel);
+      }
+      center.append(this.button("✓ Benachrichtigungen speichern",()=>this.request("notification_center_save",{
+        quiet_enabled:qOn.checked,quiet_start:Number(qStart.value),quiet_end:Number(qEnd.value),
+        categories:Object.fromEntries(Object.entries(checkboxes).map(([mid, kinds])=>[mid,Object.fromEntries(Object.entries(kinds).map(([kind,cb])=>[kind,cb.checked]))]))
+      }),"btn"));
+    }
+    intro.append(center);
 
     intro.append(this.el("h3",null,"📱 Kinder & Handy-Zugang"));
     intro.append(this.el("p","small","Jedes Kind bekommt einen persönlichen QR-Code. Der Code öffnet Family Hub auf dem Handy – ohne Passwort im QR-Code. Zur Anmeldung benötigt das Kind einmalig ein eigenes Home-Assistant-Konto ohne Administratorrechte."));
