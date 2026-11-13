@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.1.0";
+const FAMILY_HUB_UI_VERSION = "1.2.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], pro_savings_goals: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
+    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], pro_savings_goals: [], pro_goal_history: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -150,7 +150,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel"};
+      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel",pro_goal_deposit:"Sterne zurückgelegt",pro_goal_complete:"Wunsch abgeschlossen"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -1261,7 +1261,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const goals=this.data.pro_savings_goals||[];
     const section=this.el("section","panel");
     section.append(this.cardTitle("👑 PRO-Vorschau · Meine großen Wünsche"));
-    section.append(this.el("p","small","Ein freiwilliges Sparziel pro Person. Gesammelte Sterne bleiben erhalten; das Sparziel zieht keine Punkte ab. Diese Testfunktion hat noch keine Lizenzprüfung."));
+    section.append(this.el("p","small","Eltern legen Sterne für einen Wunsch zurück. Diese Sterne sind bis zur Einlösung nicht für andere Belohnungen verfügbar. Ohne Lizenzprüfung – nur als Entwicklervorschau."));
     for(const m of members){
       const goal=goals.find(g=>g.member_id===m.id);
       const balance=Math.max(0,this.pointBalance(m.id));
@@ -1270,10 +1270,25 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       if(goal){
         card.append(this.el("div","pro-goal-label",`${goal.emoji||"🎁"} ${goal.title}`));
         const target=Math.max(1,Number(goal.target)||1);
-        const done=Math.min(100,Math.round(balance/target*100));
+        const saved=Math.max(0,Number(goal.saved)||0);
+        const done=Math.min(100,Math.round(saved/target*100));
         const bar=this.el("div","pro-goal-bar");bar.style.cssText="height:12px;border-radius:12px;background:rgba(128,128,128,.25);overflow:hidden;margin:10px 0;"; const fill=this.el("div","pro-goal-fill");fill.style.background="#21a88b";fill.style.height="100%";fill.style.width=`${done}%`;bar.append(fill);
-        card.append(bar,this.el("div","small",`⭐ ${balance} von ${target} Sternen · ${done}%`));
-        if(balance>=target)card.append(this.el("div","pro-goal-ready","🎉 Ziel erreicht! Gemeinsam mit den Eltern einlösen."));
+        card.append(bar,this.el("div","small",`⭐ ${saved} von ${target} Sternen gespart · ${done}% · ${balance} frei`));
+        if(saved>=target)card.append(this.el("div","pro-goal-ready","🎉 Wunsch vollständig angespart!"));
+        if(!child){
+          if(saved<target && balance>0){
+            const deposit=this.el("form","formgrid");
+            const amount=this.input("Sterne zurücklegen","number",String(Math.min(balance,target-saved)),"proDepositAmount");
+            amount.querySelector("input").min="1";
+            amount.querySelector("input").max=String(Math.min(balance,target-saved));
+            amount.querySelector("input").required=true;
+            const button=this.el("button","btn","⭐ Sterne sparen");button.type="submit";
+            deposit.append(amount,button);
+            deposit.addEventListener("submit",e=>{e.preventDefault();this.request("pro_goal_deposit",{member_id:m.id,amount:Number(amount.querySelector("input").value)});});
+            card.append(deposit);
+          }
+          if(saved>=target)card.append(this.button("🎁 Wunsch als erfüllt markieren",()=>{if(confirm(`Wunsch „${goal.title}“ für ${m.name} abschließen?`))this.request("pro_goal_complete",{member_id:m.id});},"btn"));
+        }
       }else card.append(this.el("div","small","Noch kein Sparziel hinterlegt."));
       if(!child){
         const form=this.el("form","formgrid");
@@ -1285,6 +1300,13 @@ class BamLabsFamilyHubPanel extends HTMLElement {
         form.addEventListener("submit",e=>{e.preventDefault();this.request("pro_goal_save",{member_id:m.id,title:title.querySelector("input").value,target:Number(target.querySelector("input").value),emoji:emoji.querySelector("input").value});});
         card.append(form);
         if(goal)card.append(this.button("Sparziel entfernen",()=>{if(confirm(`Sparziel von ${m.name} entfernen?`))this.request("pro_goal_delete",{member_id:m.id});},"btn secondary"));
+      }
+      const history=(this.data.pro_goal_history||[]).filter(h=>h.member_id===m.id).slice().reverse().slice(0,5);
+      if(history.length){
+        const historyWrap=this.el("div","pro-goal-history");
+        historyWrap.append(this.el("strong",null,"🎉 Erfüllte Wünsche"));
+        for(const h of history)historyWrap.append(this.el("div","small",`${h.emoji||"🎁"} ${h.title} · ⭐ ${h.target} · ${new Date(h.at).toLocaleDateString("de-DE")}`));
+        card.append(historyWrap);
       }
       section.append(card);
     }
