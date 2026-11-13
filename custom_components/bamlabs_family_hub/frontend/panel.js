@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.4.0";
+const FAMILY_HUB_UI_VERSION = "1.5.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -999,6 +999,15 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const intro=this.el("section","panel");
     intro.append(this.cardTitle("⚙️ Einstellungen"));
     intro.append(this.el("p",null,"Hier verbindest du Kalender und richtest den Handy-Zugang für Kinder ein."));
+    const licensing=this.el("section","display-setting-card");
+    licensing.append(this.cardTitle("👑 PRO-Lizenz · Vorbereitung"));
+    licensing.append(this.el("p","small","Eine PRO-Lizenz gilt für alle Familienmitglieder dieser Home-Assistant-Installation – nicht pro Kind und nicht pro Handy."));
+    const license=this.data._pro_license||{};
+    const installation=license.installation_id||"Wird nach dem nächsten Laden angezeigt";
+    licensing.append(this.el("p",null,"Installations-ID: " + installation));
+    licensing.append(this.button("📋 Installations-ID kopieren",()=>navigator.clipboard?.writeText(installation),"btn secondary"));
+    licensing.append(this.el("p","small","Status: Lizenzserver noch nicht angebunden. Bitte hier noch keinen Lizenzschlüssel eingeben. Die aktuellen PRO-Funktionen sind weiterhin nur für interne Tests freigegeben; diese Version ist nicht zum Verkauf bestimmt."));
+    intro.append(licensing);
     const maintenance=this.el("section","display-setting-card");
     maintenance.append(this.cardTitle("🛡️ Sicherheit & Datensicherung"));
     maintenance.append(this.el("p","small","Nur für Eltern mit Administratorrechten. Der JSON-Export enthält persönliche Familiendaten und Gerätezuordnungen. Bitte sicher aufbewahren."));
