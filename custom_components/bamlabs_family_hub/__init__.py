@@ -9,6 +9,9 @@ from pathlib import Path
 from uuid import uuid4
 from urllib.parse import urlsplit, urlencode
 import logging
+import time
+import base64
+import aiohttp
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 import voluptuous as vol
@@ -22,6 +25,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN, PANEL_URL, STORAGE_KEY, STORAGE_VERSION, TITLE
+from .pro_license import validate_certificate, LICENSE_SERVER, PUBLIC_KEY_PATH, STATUS_PATH, GRACE_SECONDS, CHECK_SECONDS, ALL_MODULES
 
 _LOGGER = logging.getLogger(__name__)
 # ISO 3166-2 codes used by OpenHolidays. Never send arbitrary user URLs.
@@ -102,7 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "pro_savings_goals": data.get("pro_savings_goals", []), "pro_goal_history": data.get("pro_goal_history", []), "pro_goal_requests": data.get("pro_goal_requests", []), "pro_badge_settings": data.get("pro_badge_settings", {}), "pro_badge_awards": data.get("pro_badge_awards", []), "pro_installation_id": data.get("pro_installation_id") or uuid4().hex, "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", []), "overview_settings": data.get("overview_settings", {"order": ["tasks", "events", "work", "birthdays", "school", "meals"], "hidden": []})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "pro_savings_goals": data.get("pro_savings_goals", []), "pro_goal_history": data.get("pro_goal_history", []), "pro_goal_requests": data.get("pro_goal_requests", []), "pro_badge_settings": data.get("pro_badge_settings", {}), "pro_badge_awards": data.get("pro_badge_awards", []), "pro_installation_id": data.get("pro_installation_id") or uuid4().hex, "pro_license_token": data.get("pro_license_token", ""), "pro_license_public_key": data.get("pro_license_public_key", ""), "pro_license_checked_at": data.get("pro_license_checked_at", 0), "pro_license_remote_status": data.get("pro_license_remote_status", ""), "pro_license_last_attempt": data.get("pro_license_last_attempt", 0), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", []), "overview_settings": data.get("overview_settings", {"order": ["tasks", "events", "work", "birthdays", "school", "meals"], "hidden": []})}
     # Persist the installation identifier immediately, even if the family makes no edits.
     if not data.get("pro_installation_id"):
         await store.async_save(state)
@@ -114,6 +118,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # relying exclusively on async_setup. This also fixes updates where the
     # frontend loads the new calendar form but event_save is unknown.
     _register_commands_once(hass)
+
+    if state.get("pro_license_token"):
+        hass.async_create_task(_fh_check_activated_license(hass, hub_data))
 
     # Download the selected regional calendar without blocking Home Assistant startup.
     if any(c.get("enabled") for c in state["school_holiday_settings"].values() if isinstance(c, dict)):
@@ -127,6 +134,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await _send_work_alerts(hass)
             await _send_birthday_reminders(hass)
             await _send_extra_notifications(hass)
+            if now.minute < 5 and hub_data["state"].get("pro_license_token"):
+                await _fh_check_activated_license(hass, hub_data)
             if now.hour == 3 and now.minute < 5:
                 await _refresh_school_holidays(hass)
         def _schedule_tick(now):
@@ -146,7 +155,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=1.5.0",
+            module_url=f"/{DOMAIN}_static/panel.js?v=1.7.0",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -232,11 +241,82 @@ def _meal_planner_installed(hub):
     return isinstance(meal, dict) and isinstance(meal.get("data"), dict)
 
 
+def _pro_license_status(state):
+    """Read-only summary; license secret is never returned to a browser."""
+    result = {"installation_id": state.get("pro_installation_id", ""), "verified": False, "status": "not_activated"}
+    token = state.get("pro_license_token", "")
+    if not token:
+        return {**result, "message": "Noch keine Family-Hub-Lizenz aktiviert."}
+    try:
+        cert = validate_certificate(token, state["pro_installation_id"], state.get("pro_license_public_key", ""))
+    except ValueError as err:
+        return {**result, "status": "invalid", "message": str(err)}
+    remote = state.get("pro_license_remote_status", "")
+    last = state.get("pro_license_checked_at", 0)
+    if remote == "revoked":
+        return {**result, "status": "revoked", "message": "Diese Lizenz wurde zurückgezogen oder übertragen."}
+    if remote == "unknown":
+        return {**result, "status": "unknown", "message": "Die Lizenz ist beim Shop nicht registriert."}
+    if remote != "active" or not isinstance(last, (int, float)) or time.time() - last > GRACE_SECONDS:
+        return {**result, "status": "needs_online_check", "message": "Online-Bestätigung fehlt oder ist älter als 14 Tage."}
+    all_active = ALL_MODULES.issubset(set(cert["modules"]))
+    return {**result, "verified": True, "status": "active" if all_active else "partial", "license_id": cert["license_id"], "modules": cert["modules"], "all_pro": all_active, "last_checked": int(last), "message": "Family Hub PRO freigeschaltet." if all_active else "Teilmodule gültig; für sämtliche PRO-Funktionen ist BL-FH-ALL-PRO vorgesehen."}
+
+
+async def _fh_license_get(hass, path):
+    """Only official fixed HTTPS URLs. No arbitrary URL or redirects."""
+    session = async_get_clientsession(hass)
+    url = LICENSE_SERVER + path
+    async with session.get(url, timeout=aiohttp.ClientTimeout(total=12), allow_redirects=False, headers={"Accept": "application/json", "Cache-Control": "no-cache"}) as response:
+        if response.status != 200:
+            raise ValueError("BamLabs-Lizenzserver antwortet nicht wie erwartet (HTTP %s)." % response.status)
+        if response.content_length is not None and response.content_length > 2048:
+            raise ValueError("Ungültige Antwort vom Lizenzserver")
+        return await response.json(content_type="application/json")
+
+
+async def _fh_check_activated_license(hass, hub, force=False):
+    """Confirm signed, pinned token at most every six hours unless requested."""
+    state = hub["state"]
+    token = state.get("pro_license_token", "")
+    key = state.get("pro_license_public_key", "")
+    if not token or not key:
+        return _pro_license_status(state)
+    try:
+        cert = validate_certificate(token, state["pro_installation_id"], key)
+    except ValueError:
+        return _pro_license_status(state)
+    now = int(time.time())
+    if not force and now - int(state.get("pro_license_last_attempt", 0)) < CHECK_SECONDS:
+        return _pro_license_status(state)
+    async with hub["lock"]:
+        if not force and now - int(state.get("pro_license_last_attempt", 0)) < CHECK_SECONDS:
+            return _pro_license_status(state)
+        state["pro_license_last_attempt"] = now
+        await hub["store"].async_save(state)
+    try:
+        response = await _fh_license_get(hass, STATUS_PATH + cert["license_id"])
+        status = response.get("status") if isinstance(response, dict) else None
+        if status not in ("active", "revoked", "unknown"):
+            raise ValueError("Ungültige Antwort vom Lizenzserver")
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError) as err:
+        _LOGGER.warning("BamLabs Family Hub: Lizenzprüfung vorübergehend nicht erreichbar: %s", err)
+        return _pro_license_status(state)
+    async with hub["lock"]:
+        # A concurrent license change must not inherit the old token's status.
+        if state.get("pro_license_token") == token:
+            state["pro_license_remote_status"] = status
+            if status == "active":
+                state["pro_license_checked_at"] = int(time.time())
+            await hub["store"].async_save(state)
+    return _pro_license_status(state)
+
+
 def _visible_state(hub, connection):
     """Never give a child's account other people's tasks, events or calendar sources."""
     state = hub["state"]
     if _owner(connection):
-        return {**state, "_pro_license": {"installation_id": state.get("pro_installation_id", ""), "status": "integration_pending", "scope": "one_installation_all_family_members"}, "_meal_planner_available": _meal_planner_installed(hub), "_challenge_progress": _challenge_progress(state), "_role": "admin"}
+        return {**{k:v for k,v in state.items() if k != "pro_license_token"}, "_pro_license": _pro_license_status(state), "_meal_planner_available": _meal_planner_installed(hub), "_challenge_progress": _challenge_progress(state), "_role": "admin"}
     user = connection.user
     if user and user.is_active and user.id == state.get("tablet_user_id"):
         member_id = _child_member(hub, connection)
@@ -3017,19 +3097,69 @@ async def ws_system_check(hass, connection, msg):
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/pro_license_info"})
 @websocket_api.async_response
 async def ws_pro_license_info(hass, connection, msg):
-    """Expose only non-secret license preparation info to an HA administrator."""
     hub = hass.data.get(DOMAIN)
     if not hub or not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
         return
-    connection.send_result(msg["id"], {
-        "installation_id": hub["state"].get("pro_installation_id", ""),
-        "status": "integration_pending",
-        "license_scope": "installation",
-        "family_members_limit": None,
-        "verified": False,
-        "message": "Die Lizenzprüfung mit dem BamLabs License Manager ist noch nicht verbunden.",
-    })
+    connection.send_result(msg["id"], _pro_license_status(hub["state"]))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/pro_license_activate",
+    vol.Required("certificate"): str,
+})
+@websocket_api.async_response
+async def ws_pro_license_activate(hass, connection, msg):
+    """Online activation with an Ed25519-signed genuine BamLabs product token."""
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    state = hub["state"]
+    token = msg["certificate"].strip()
+    try:
+        key = state.get("pro_license_public_key", "")
+        if not key:
+            pub_data = await _fh_license_get(hass, PUBLIC_KEY_PATH)
+            if not isinstance(pub_data, dict) or pub_data.get("algorithm") != "Ed25519":
+                raise ValueError("BamLabs-Prüfschlüssel ungültig")
+            key = pub_data.get("public_key", "")
+            if not isinstance(key, str) or len(base64.b64decode(key, validate=True)) != 32:
+                raise ValueError("BamLabs-Prüfschlüssel ungültig")
+        cert = validate_certificate(token, state["pro_installation_id"], key)
+        remote = await _fh_license_get(hass, STATUS_PATH + cert["license_id"])
+        if not isinstance(remote, dict) or remote.get("status") != "active":
+            raise ValueError("Lizenz beim BamLabs-Shop nicht aktiv.")
+    except (ValueError, aiohttp.ClientError, asyncio.TimeoutError, OSError) as err:
+        connection.send_error(msg["id"], "invalid_license", str(err))
+        return
+    async with hub["lock"]:
+        state.update({"pro_license_token": token, "pro_license_public_key": key, "pro_license_checked_at": int(time.time()), "pro_license_last_attempt": int(time.time()), "pro_license_remote_status": "active"})
+        await hub["store"].async_save(state)
+    connection.send_result(msg["id"], _pro_license_status(state))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/pro_license_refresh"})
+@websocket_api.async_response
+async def ws_pro_license_refresh(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    connection.send_result(msg["id"], await _fh_check_activated_license(hass, hub, force=True))
+
+
+@websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/pro_license_clear"})
+@websocket_api.async_response
+async def ws_pro_license_clear(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
+        return
+    async with hub["lock"]:
+        hub["state"].update({"pro_license_token": "", "pro_license_public_key": "", "pro_license_checked_at": 0, "pro_license_last_attempt": 0, "pro_license_remote_status": ""})
+        await hub["store"].async_save(hub["state"])
+    connection.send_result(msg["id"], _pro_license_status(hub["state"]))
 
 
 def _register_commands_once(hass: HomeAssistant) -> None:
@@ -3038,7 +3168,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
     if hub_data.get("commands_registered"):
         return
     for command in (
-        ws_version, ws_pro_license_info, ws_backup_export, ws_system_check, ws_overview_settings_save, ws_notification_center_save, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
+        ws_version, ws_pro_license_info, ws_pro_license_activate, ws_pro_license_refresh, ws_pro_license_clear, ws_backup_export, ws_system_check, ws_overview_settings_save, ws_notification_center_save, ws_birthday_settings_save, ws_reminder_settings_save, ws_reminder_test, ws_push_diagnose, ws_push_devices, ws_push_settings_save, ws_push_test, ws_state, ws_member_save, ws_member_delete,
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_holiday_save, ws_school_holiday_refresh, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,

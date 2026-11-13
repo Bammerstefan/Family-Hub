@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.5.0";
+const FAMILY_HUB_UI_VERSION = "1.7.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -1000,13 +1000,38 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     intro.append(this.cardTitle("⚙️ Einstellungen"));
     intro.append(this.el("p",null,"Hier verbindest du Kalender und richtest den Handy-Zugang für Kinder ein."));
     const licensing=this.el("section","display-setting-card");
-    licensing.append(this.cardTitle("👑 PRO-Lizenz · Vorbereitung"));
-    licensing.append(this.el("p","small","Eine PRO-Lizenz gilt für alle Familienmitglieder dieser Home-Assistant-Installation – nicht pro Kind und nicht pro Handy."));
+    licensing.append(this.cardTitle("👑 Family Hub PRO · Lizenz"));
+    licensing.append(this.el("p","small","Eine Lizenz gilt für alle Familienmitglieder dieser Home-Assistant-Installation. Die kostenlose Version bleibt unabhängig nutzbar."));
     const license=this.data._pro_license||{};
     const installation=license.installation_id||"Wird nach dem nächsten Laden angezeigt";
     licensing.append(this.el("p",null,"Installations-ID: " + installation));
     licensing.append(this.button("📋 Installations-ID kopieren",()=>navigator.clipboard?.writeText(installation),"btn secondary"));
-    licensing.append(this.el("p","small","Status: Lizenzserver noch nicht angebunden. Bitte hier noch keinen Lizenzschlüssel eingeben. Die aktuellen PRO-Funktionen sind weiterhin nur für interne Tests freigegeben; diese Version ist nicht zum Verkauf bestimmt."));
+    licensing.append(this.el("p",null,"Status: " + (license.verified?"✅ Lizenz verifiziert":"⚠️ Noch nicht aktiviert")));
+    licensing.append(this.el("p","small",license.message||"Lizenzprüfung wird vorbereitet."));
+    if(license.modules?.length) licensing.append(this.el("p","small","Lizenzmodule: " + license.modules.join(", ")));
+    if(license.last_checked) licensing.append(this.el("p","small","Zuletzt online geprüft: " + new Date(license.last_checked*1000).toLocaleString("de-AT")));
+    if(license.verified) licensing.append(this.button("🔄 Lizenzstatus jetzt prüfen",async()=>{
+      try{this.data._pro_license=await this._hass.callWS({type:"bamlabs_family_hub/pro_license_refresh"});this.error="";}catch(err){this.error=err.message||String(err);}this.render();
+    },"btn secondary"));
+    const form=this.el("form","form");
+    const certLabel=this.el("label",null,"Lizenzschlüssel vom BamLabs-Shop");
+    const certInput=this.el("textarea");certInput.rows=3;certInput.maxLength=8192;certInput.placeholder="Signierten Lizenzschlüssel hier einfügen";certInput.autocomplete="off";certInput.setAttribute("aria-label","PRO-Lizenzschlüssel");
+    certLabel.append(certInput);form.append(certLabel);
+    const submit=this.el("button","btn","🔐 Lizenz überprüfen");submit.type="submit";form.append(submit);
+    form.addEventListener("submit",async(e)=>{
+      e.preventDefault();
+      try{
+        const result=await this._hass.callWS({type:"bamlabs_family_hub/pro_license_activate",certificate:certInput.value.trim()});
+        certInput.value="";this.data._pro_license=result;this.error="";this.savedNotice="✅ Lizenz erfolgreich geprüft.";
+      }catch(err){this.error=err.message||String(err);this.savedNotice="";}
+      this.render();
+    });
+    licensing.append(form);
+    if(license.verified)licensing.append(this.button("Lizenz auf dieser Installation entfernen",async()=>{
+      if(!confirm("PRO-Lizenz wirklich aus dieser Installation entfernen?"))return;
+      try{this.data._pro_license=await this._hass.callWS({type:"bamlabs_family_hub/pro_license_clear"});this.error="";}catch(err){this.error=err.message||String(err);}this.render();
+    },"btn secondary"));
+    licensing.append(this.el("p","small","Aktivierung benötigt eine Verbindung zu bamlabs.at und den License Manager ab Version 0.4.1. Danach läuft die Prüfung automatisch etwa alle sechs Stunden; bei Internetausfall gilt eine Übergangsfrist von 14 Tagen. Die bisherigen PRO-Funktionen bleiben in dieser Vorschau im Testmodus."));
     intro.append(licensing);
     const maintenance=this.el("section","display-setting-card");
     maintenance.append(this.cardTitle("🛡️ Sicherheit & Datensicherung"));
