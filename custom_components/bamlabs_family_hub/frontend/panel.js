@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.8.0";
+const FAMILY_HUB_UI_VERSION = "1.9.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -15,6 +15,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     this._syncInterval = null;
     this.calendarMode = "month";
     this.calendarAnchor = new Date();
+    this.childCalendarAnchor = new Date();
+    this.childCalendarDay = this.isoDate(new Date());
     this.weekAnchor = new Date();
     this.weekMemberFilter = "";
     this.editEvent = null;
@@ -248,7 +250,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       :host {display:block;min-height:100%;font-family:var(--primary-font-family,system-ui,-apple-system,sans-serif);color:var(--primary-text-color,#192238);background:var(--primary-background-color,#f5f7fb)}
       *,*:before,*:after{box-sizing:border-box}button,input,select,textarea{font:inherit}button{cursor:pointer}
       .overview-editor{display:grid;gap:9px;margin:15px 0}.overview-editor-row{display:flex;align-items:center;gap:9px;border:1px solid var(--divider-color,#dde3eb);background:var(--card-background-color,#fff);padding:10px;border-radius:12px;min-width:0}.overview-editor-row input{width:21px;height:21px;flex-shrink:0}.overview-editor-name{flex:1;min-width:0;font-weight:650}.overview-move{padding:7px 11px;min-width:38px}.page{max-width:1120px;margin:0 auto;padding:24px 20px 60px}.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}.brand{font-size:25px;font-weight:800;letter-spacing:-.6px}.small{font-size:13px;color:var(--secondary-text-color,#697386)}.nav{display:flex;gap:9px;overflow:auto;margin:23px 0}.tab{border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff);padding:11px 16px;border-radius:12px;color:inherit;white-space:nowrap;font-weight:650}.tab.selected{background:#1464db;color:white;border-color:#1464db}
-      .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.save-success{padding:14px 17px;border-radius:12px;background:#e4f7e9;color:#195c31;font-weight:750;margin:0 0 15px;border:1px solid #a5dfb6}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
+      .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:15px}.panel{padding:21px;background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;box-shadow:0 2px 10px #00000008;margin-bottom:16px}.stat{font-size:32px;font-weight:800;margin-top:10px}.heading{font-size:19px;margin:0 0 16px}.actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.btn{padding:10px 14px;border-radius:10px;background:#1464db;border:1px solid #1464db;color:#fff;font-weight:650}.secondary{background:transparent;color:var(--primary-text-color,#192238);border-color:var(--divider-color,#cfd6df)}.danger{color:#c32929}.list{display:grid;gap:12px;margin-top:12px}.item{display:flex;align-items:center;gap:13px;border:1px solid var(--divider-color,#e4e8ef);border-radius:12px;padding:12px}.item-main{flex:1;min-width:0}.item-title{font-weight:700;overflow-wrap:anywhere}.desc{font-size:13px;white-space:pre-wrap;margin-top:5px;color:var(--secondary-text-color,#697386)}.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.chip{display:inline-block;padding:4px 9px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:12px}.dot{width:15px;height:15px;border-radius:50%;flex-shrink:0;border:1px solid #0002}.check{width:21px;height:21px;cursor:pointer}.done .item-title{text-decoration:line-through;opacity:.6}.field{display:grid;gap:5px;font-weight:650;font-size:14px}.field input,.field textarea,.field select{width:100%;min-height:39px;color:var(--primary-text-color,#192238);background:var(--card-background-color,#fff);border:1px solid var(--divider-color,#cbd3de);border-radius:9px;padding:9px}.field textarea{min-height:86px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:13px;margin:15px 0}.full{grid-column:1/-1}.colors{display:flex;gap:8px;flex-wrap:wrap}.person-choice{display:flex;gap:7px;align-items:center;padding:6px 0}.save-success{padding:14px 17px;border-radius:12px;background:#e4f7e9;color:#195c31;font-weight:750;margin:0 0 15px;border:1px solid #a5dfb6}.notice{padding:13px 15px;border-radius:10px;background:#fff2dd;color:#6f4a0b;margin-bottom:15px}.empty{color:var(--secondary-text-color,#697386);padding:24px 0;text-align:center}.footer{margin-top:35px;text-align:center}.tag-high{color:#ba3d25}.muted{color:var(--secondary-text-color,#697386)}.calbar{display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;margin:12px 0 18px}.calgrid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px}.calday{min-height:104px;border:1px solid var(--divider-color,#dfe5ee);border-radius:10px;padding:6px;min-width:0;background:var(--card-background-color,#fff)}.calday.outside{opacity:.48}.daynum{font-weight:750;margin-bottom:6px}.calentry{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%;border:0;border-left:4px solid #1464db;background:var(--secondary-background-color,#eef1f6);text-align:left;border-radius:5px;margin:3px 0;padding:5px;color:var(--primary-text-color,#192238);font-size:12px}.calweek{display:grid;gap:9px}.calendar-stack{display:grid;gap:7px}.calhead{font-size:12px;text-align:center;font-weight:700;padding:8px 2px;color:var(--secondary-text-color,#697386)}.child-calgrid .child-calday{min-height:64px;text-align:center}.child-cal-dot{font-size:11px;color:var(--primary-color,#1464db);font-weight:700;margin-top:4px}.caldate{font-weight:750;margin:8px 0}.calfilters{display:flex;gap:7px;flex-wrap:wrap}
       .week-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:9px}.week-column{border:1px solid var(--divider-color,#dfe5ee);border-radius:12px;padding:10px;min-width:0}.week-column.today{border-color:var(--primary-color,#1464db);border-width:2px}.week-card{padding:8px;margin-top:9px;background:var(--secondary-background-color,#eef1f6);border-radius:9px;border-left:4px solid #1464db;overflow-wrap:anywhere;font-size:13px}.week-card .check{width:18px;height:18px}.week-check{display:flex;gap:8px;align-items:flex-start}.week-meta{font-size:11px;opacity:.8;margin-top:4px}.week-summary{margin:10px 0 18px}.week-column h3{font-size:14px;margin:0 0 7px}.week-column .small{font-size:11px} .progress-person{border-top:1px solid var(--divider-color,#dfe5ee);padding:14px 0;display:grid;gap:8px}.progress-head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center}.progress-track{height:12px;background:var(--secondary-background-color,#eef1f6);border-radius:999px;overflow:hidden}.progress-fill{height:100%;border-radius:999px;transition:width .2s}.progress-person .btn{justify-self:start} 
       .child-welcome{margin-bottom:16px}.child-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px}.child-stat{display:grid;gap:4px;align-content:center;border-radius:13px;background:var(--secondary-background-color,#eef1f6);padding:12px;text-align:center}.child-stat-number{font-size:24px;font-weight:800}.child-task{min-height:62px;cursor:pointer}.child-task .check{width:28px;height:28px;flex-shrink:0}.child-action{min-height:48px;margin-top:12px}
       .hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}.hero-card{padding:18px;border-radius:18px;background:linear-gradient(180deg,#ffffff,#f7faff);border:1px solid var(--divider-color,#dfe5ee);box-shadow:0 2px 10px #00000006}.hero-icon{font-size:28px}.hero-value{font-size:30px;font-weight:800;margin-top:6px}.hero-label{font-size:14px;color:var(--secondary-text-color,#697386);margin-top:4px}.big-link-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:16px 0 20px}.big-link{display:grid;gap:6px;align-content:start;text-align:left;padding:18px;border-radius:18px;border:1px solid var(--divider-color,#dfe5ee);background:var(--card-background-color,#fff)}.big-link-icon{font-size:28px}.big-link-title{font-weight:800;font-size:18px}.big-link small{font-size:13px;color:var(--secondary-text-color,#697386)}.member-card-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.member-card{border:1px solid var(--divider-color,#dfe5ee);border-radius:18px;padding:16px;background:var(--card-background-color,#fff);display:grid;gap:10px}.member-head{display:flex;align-items:center;gap:12px}.member-avatar{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;color:#fff;font-weight:800;font-size:19px;flex-shrink:0}.member-name{font-size:18px;font-weight:800}.member-task-count{font-size:14px;color:var(--secondary-text-color,#697386)}.member-badges{display:flex;gap:8px;flex-wrap:wrap}.member-badge{padding:6px 10px;border-radius:999px;background:var(--secondary-background-color,#eef1f6);font-size:13px;font-weight:700}.section-note{margin-top:-8px;margin-bottom:16px}.focus-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.kid-hero{background:linear-gradient(135deg,#fff6cc,#ffe8f0 50%,#ecf6ff);border:1px solid #f2df9d}.kid-big-title{font-size:28px;font-weight:900;line-height:1.1}.kid-sub{font-size:15px;color:#4d5b73}.kid-quick-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:14px}.child-big-btn{display:grid;gap:6px;justify-items:center;align-content:center;text-align:center;min-height:92px;padding:14px;border-radius:18px;border:0;background:#ffffff}.child-big-btn span:first-child{font-size:30px}.child-big-btn strong{font-size:18px}.kid-section-title{font-size:24px;font-weight:900;margin:0 0 8px}.kid-section-note{font-size:14px;color:var(--secondary-text-color,#697386);margin-bottom:12px}.kid-stack{display:grid;gap:12px}.kid-empty{padding:18px;border-radius:16px;background:#fff9e8;border:1px dashed #e6d28b;font-weight:700}.mini-note{font-size:12px;color:var(--secondary-text-color,#697386)}
@@ -357,6 +359,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const assignedParent=child && this.data.members?.[0]?.role==="parent";
     const tabs = child ? [["today","🌞 Heute"],["childweek","🗓️ Meine Woche"],["success","🏆 Erfolge"],["routines","🌈 Mein Tag"],["school","🎒 Schule"],["lists","🛒 Listen"],["tasks","✅ Aufgaben"],["calendar","📅 Termine"]]
                        : [["today","🏡 Start"],["dayplan","📋 Tagesplan"],["familystats","🏆 Familie"],["week","🗓️ Woche"],["routines","🌈 Routinen"],["school","🎒 Schule & Kita"],["work","💼 Dienstplan"],["lists","🛒 Listen"],["calendar","📅 Kalender"],["tasks","✅ Aufgaben"],["members","👨‍👩‍👧 Familie"],["settings","⚙️ Einstellungen"]];
+    if(child && this.data.members?.[0]?.child_calendar_enabled) tabs.splice(2,0,["mycalendar","📅 Mein Kalender"]);
     if(child && !assignedParent && this.data.school_pack_settings?.[this.data.members?.[0]?.id]?.enabled) tabs.splice(5,0,["pack","🎒 Schultasche"]);
     if(assignedParent){const schoolTab=tabs.find(t=>t[0]==="school");if(schoolTab){schoolTab[0]="work";schoolTab[1]="💼 Mein Dienstplan";}}
     if(this.data._meal_planner_available) tabs.push(["meals","🍽️ Unser Essen"]);
@@ -2070,6 +2073,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const q7=this.button("",()=>{this.tab="childweek";this.weekAnchor=new Date();this.render();},"child-big-btn"); q7.append(this.el("span",null,"🗓️"),this.el("strong",null,"Meine Woche"),this.el("span","mini-note","Was kommt als Nächstes?"));
     const q8=this.button("",()=>{this.tab="success";this.render();},"child-big-btn"); q8.append(this.el("span",null,"🏆"),this.el("strong",null,"Meine Erfolge"),this.el("span","mini-note","Was habe ich geschafft?"));
     quick.append(q4,q7,q5,q6,q1,q2,q3,q8);
+    if(me?.child_calendar_enabled){const cal=this.button("",()=>{this.tab="mycalendar";this.childCalendarAnchor=new Date();this.childCalendarDay=this.isoDate(new Date());this.render();},"child-big-btn");cal.append(this.el("span",null,"🗓️"),this.el("strong",null,"Mein Kalender"),this.el("span","mini-note","Mein ganzer Monat"));quick.append(cal);}
     if(this.data._meal_planner_available) {
       const mealBtn=this.button("",()=>{this.tab="meals";this.render();this.loadMealWeek();},"child-big-btn");
       mealBtn.append(this.el("span",null,"🍽️"),this.el("strong",null,"Unser Essen"),this.el("span","mini-note","Was gibt es diese Woche?"));
@@ -2090,6 +2094,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     if(this.tab === "meals") this.renderMealWeek(page);
     if(this.tab === "success") this.renderChildSuccess(page);
     if(this.tab === "childweek") this.renderChildWeek(page);
+    if(this.tab === "mycalendar" && me?.child_calendar_enabled) this.renderChildMonth(page);
     if(this.tab === "routines") this.renderRoutines(page, true);
     if(this.tab === "school" && !isParent) this.renderSchool(page, true);
     if(this.tab === "pack" && !isParent) this.renderSchoolPack(page);
@@ -2259,6 +2264,61 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     panel.append(grid);panel.append(this.el("p","small","Die Wochenstatistik zählt erledigte Aufgaben erst seit v0.3.31. Bereits früher erledigte Aufgaben werden nicht rückwirkend geschätzt."));
     page.append(panel);
     this.renderChallengeBlock(page,true);
+  }
+  renderChildMonth(page) {
+    // Child data is server-filtered by member. Never fetch admin/external calendars here.
+    const me=this.data.members?.[0];
+    if(!me?.child_calendar_enabled)return;
+    const base=this.childCalendarAnchor;
+    const first=new Date(base.getFullYear(),base.getMonth(),1);
+    const last=new Date(base.getFullYear(),base.getMonth()+1,0);
+    const start=this.isoDate(first),end=this.isoDate(last);
+    const events=this.occurrences(start,end).filter(o=>o.event && (o.event.members||[]).includes(me.id));
+    if(/^\d{4}-\d{2}-\d{2}$/.test(me.birthday||"")){
+      const bmonth=Number(me.birthday.slice(5,7)), bday=Number(me.birthday.slice(8,10));
+      if(bmonth===base.getMonth()+1){
+        const actual=bmonth===2&&bday===29&&last.getDate()<29?28:bday;
+        const iso=this.isoDate(new Date(base.getFullYear(),bmonth-1,actual));
+        events.push({event:{title:"🎂 Mein Geburtstag",members:[me.id],all_day:true},start:iso,end:iso,time:""});
+      }
+    }
+    const absent=(this.data.school_absences||[]).filter(a=>a.member_id===me.id&&a.start<=end&&a.end>=start);
+    absent.forEach(a=>events.push({event:{title:"🏖️ "+(a.title||a.reason||"Schulfrei"),members:[me.id],all_day:true},start:a.start,end:a.end,time:""}));
+    const cfg=this.data.school_holiday_settings?.[me.id];
+    if(cfg?.enabled){
+      const holidays=this.data.school_holiday_cache?.[`${cfg.country}:${cfg.region}`]?.entries||[];
+      holidays.filter(h=>h.start<=end&&h.end>=start&&(h.kind!=="school"||cfg.school!==false)&&(h.kind!=="public"||cfg.public!==false)).forEach(h=>events.push({event:{title:`${h.kind==="school"?"🏖️":"📅"} ${h.name}`,members:[me.id],all_day:true},start:h.start,end:h.end,time:""}));
+    }
+    const section=this.el("section","panel");section.append(this.cardTitle("📅 Mein Kalender"));
+    section.append(this.el("p","kid-section-note","Deine Termine, dein Geburtstag und deine freien Tage – nur für dich."));
+    const bar=this.el("div","calbar");const nav=this.el("div","actions");
+    nav.append(this.button("‹",()=>{this.childCalendarAnchor=this.monthStep(base,-1);this.childCalendarDay=this.isoDate(this.childCalendarAnchor);this.render();},"btn secondary"));
+    nav.append(this.button("Heute",()=>{this.childCalendarAnchor=new Date();this.childCalendarDay=this.isoDate(new Date());this.render();},"btn secondary"));
+    nav.append(this.button("›",()=>{this.childCalendarAnchor=this.monthStep(base,1);this.childCalendarDay=this.isoDate(this.childCalendarAnchor);this.render();},"btn secondary"));
+    bar.append(this.el("strong",null,first.toLocaleDateString("de-AT",{month:"long",year:"numeric"})),nav);section.append(bar);
+    const grid=this.el("div","calgrid child-calgrid");
+    ["Mo","Di","Mi","Do","Fr","Sa","So"].forEach(day=>grid.append(this.el("div","calhead",day)));
+    const offset=(first.getDay()+6)%7;const cells=Math.ceil((offset+last.getDate())/7)*7;
+    for(let i=0;i<cells;i++){
+      const date=this.addDays(first,i-offset),iso=this.isoDate(date),isCurrent=date.getMonth()===first.getMonth();
+      const dayEvents=events.filter(o=>o.start<=iso&&o.end>=iso);
+      const cell=this.el("div",`calday child-calday${isCurrent?"":" outside"}`);
+      if(iso===this.childCalendarDay)cell.style.outline="2px solid var(--primary-color,#1464db)";
+      const number=this.button(String(date.getDate()),()=>{this.childCalendarDay=iso;this.render();},"btn secondary");number.style.padding="5px 8px";number.setAttribute("aria-label",this.dateLabel(iso));cell.append(number);
+      if(dayEvents.length)cell.append(this.el("div","child-cal-dot",`● ${dayEvents.length}`));
+      grid.append(cell);
+    }
+    section.append(grid);
+    const selected=this.childCalendarDay;
+    const agenda=this.el("div","calendar-stack");agenda.append(this.el("h3",null,`📌 ${this.dateLabel(selected)}`));
+    const selectedEvents=events.filter(o=>o.start<=selected&&o.end>=selected).sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+    if(!selectedEvents.length)agenda.append(this.el("div","kid-empty","🌈 An diesem Tag ist nichts eingetragen."));
+    else selectedEvents.forEach(o=>{
+      const line=this.el("div","item");const dot=this.el("span","dot");dot.style.background=me.color||"#1464db";
+      const body=this.el("div","item-main");body.append(this.el("div","item-title",o.event.title));
+      body.append(this.el("div","small",o.time?o.time+" Uhr":"Ganztägig"));line.append(dot,body);agenda.append(line);
+    });
+    section.append(agenda);page.append(section);
   }
   renderChildSuccess(page) {
     const me=this.data.members[0];
@@ -2598,9 +2658,12 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       const roleSel=this.el("select");for(const [value,label] of [["child","🧒 Kind"],["parent","👨‍👩‍👧 Elternteil"]]){const opt=this.el("option",null,label);opt.value=value;roleSel.append(opt);}
       roleSel.value=this.editMember.role||"child";roleLabel.append(roleSel);
       const birthday=this.input("Geburtsdatum (optional)","date",this.editMember.birthday||"","birthday");
-      f.append(n,c,avatarLabel,roleLabel,birthday);
+      const calLabel=this.el("label","field full");calLabel.append(this.el("span","field-title","📅 Kinder-Monatskalender (FREE)"));
+      const calToggle=this.el("input");calToggle.type="checkbox";calToggle.checked=!!this.editMember.child_calendar_enabled;calToggle.style.width="24px";
+      calLabel.append(calToggle,this.el("span","small","Nur zugeordnete Termine anzeigen. Keine privaten Termine anderer Personen."));
+      f.append(n,c,avatarLabel,roleLabel,birthday,calLabel);
       const save=this.el("div","full");const submit=this.el("button","btn","Speichern");submit.type="submit";save.append(submit);
-      f.append(save);f.addEventListener("submit",e=>{e.preventDefault();this.request("member_save",{member_id:this.editMember.id||"",name:n.querySelector("input").value,color:c.querySelector("input").value,avatar:avatarSelect.value,role:roleSel.value,birthday:birthday.querySelector("input").value});});card.append(f);
+      f.append(save);f.addEventListener("submit",e=>{e.preventDefault();this.request("member_save",{member_id:this.editMember.id||"",name:n.querySelector("input").value,color:c.querySelector("input").value,avatar:avatarSelect.value,role:roleSel.value,birthday:birthday.querySelector("input").value,child_calendar_enabled:calToggle.checked});});card.append(f);
     }
     const list=this.el("div","list");
     this.data.members.forEach(m=>{const r=this.el("div","item");const dot=this.el("span","dot");dot.style.background=m.color;

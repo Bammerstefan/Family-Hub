@@ -155,7 +155,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=1.8.0",
+            module_url=f"/{DOMAIN}_static/panel.js?v=1.9.0",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -501,6 +501,7 @@ async def ws_state(hass, connection, msg):
     vol.Optional("avatar", default="🙂"): str,
     vol.Optional("role", default="child"): vol.In(("child", "parent")),
     vol.Optional("birthday", default=""): str,
+    vol.Optional("child_calendar_enabled", default=False): bool,
 })
 @websocket_api.async_response
 async def ws_member_save(hass, connection, msg):
@@ -526,9 +527,9 @@ async def ws_member_save(hass, connection, msg):
             connection.send_error(msg["id"], "not_found", "Familienmitglied nicht gefunden")
             return
         if member:
-            member.update(name=name, color=color, avatar=avatar, role=msg["role"], birthday=birthday)
+            member.update(name=name, color=color, avatar=avatar, role=msg["role"], birthday=birthday, child_calendar_enabled=msg["child_calendar_enabled"])
         else:
-            members.append({"id": uuid4().hex, "name": name, "color": color, "avatar": avatar, "role": msg["role"], "birthday": birthday})
+            members.append({"id": uuid4().hex, "name": name, "color": color, "avatar": avatar, "role": msg["role"], "birthday": birthday, "child_calendar_enabled": msg["child_calendar_enabled"]})
         await hub["store"].async_save(hub["state"])
         connection.send_result(msg["id"], hub["state"])
 
