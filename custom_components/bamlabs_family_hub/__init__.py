@@ -155,7 +155,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=1.7.0",
+            module_url=f"/{DOMAIN}_static/panel.js?v=1.8.0",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -312,16 +312,33 @@ async def _fh_check_activated_license(hass, hub, force=False):
     return _pro_license_status(state)
 
 
+def _pro_kids_enabled(state):
+    """PRO access is enforced in Python, not only by hidden frontend buttons.
+
+    kids_pro (also present in the complete package) covers the current
+    optional savings goals and achievement badges. No FREE API is gated.
+    """
+    info = _pro_license_status(state)
+    return bool(info.get("verified") and "kids_pro" in info.get("modules", []))
+
+
+def _require_pro_kids(hub, connection, msg):
+    if not _pro_kids_enabled(hub["state"]):
+        connection.send_error(msg["id"], "pro_license_required", "Für Wünsche und Abzeichen wird eine gültige Family-Hub-Kinder-PRO-Lizenz benötigt.")
+        return False
+    return True
+
+
 def _visible_state(hub, connection):
     """Never give a child's account other people's tasks, events or calendar sources."""
     state = hub["state"]
     if _owner(connection):
-        return {**{k:v for k,v in state.items() if k != "pro_license_token"}, "_pro_license": _pro_license_status(state), "_meal_planner_available": _meal_planner_installed(hub), "_challenge_progress": _challenge_progress(state), "_role": "admin"}
+        return {**{k:v for k,v in state.items() if k != "pro_license_token"}, "_pro_license": _pro_license_status(state), "_pro_access": {"kids_pro": _pro_kids_enabled(state)}, "_meal_planner_available": _meal_planner_installed(hub), "_challenge_progress": _challenge_progress(state), "_role": "admin"}
     user = connection.user
     if user and user.is_active and user.id == state.get("tablet_user_id"):
         member_id = _child_member(hub, connection)
         if not member_id:
-            return {"_role": "tablet_picker", "members": [
+            return {"_role": "tablet_picker", "_pro_access": {"kids_pro": _pro_kids_enabled(state)}, "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
                 "point_entries": [], "task_completions": [], "rewards": [], "pro_savings_goals": [], "pro_goal_history": [], "pro_goal_requests": [], "pro_badge_settings": {}, "pro_badge_awards": [], "routine_checks": [], "school_plan": [], "school_years": [], "school_year_active": {}, "school_modes": {}, "school_absences": [], "school_holiday_settings": {}, "school_holiday_cache": {}, "school_pack_settings": {}, "school_pack_checks": [], "birthday_settings": {"enabled": False}, "work_plan": [], "work_exceptions": [], "family_lists": [],
@@ -329,7 +346,7 @@ def _visible_state(hub, connection):
     member_id = _child_member(hub, connection)
     if not member_id:
         return None
-    return {"_meal_planner_available": _meal_planner_installed(hub), "_challenge_progress": _challenge_progress(state), "_role": "child", "_tablet_mode": bool(user and user.id == state.get("tablet_user_id")), "_member_id": member_id,
+    return {"_pro_access": {"kids_pro": _pro_kids_enabled(state)}, "_meal_planner_available": _meal_planner_installed(hub), "_challenge_progress": _challenge_progress(state), "_role": "child", "_tablet_mode": bool(user and user.id == state.get("tablet_user_id")), "_member_id": member_id,
             "members": [m for m in state["members"] if m["id"] == member_id],
             "tasks": [{**t, "done": _done_for(t, member_id)} for t in state["tasks"] if member_id in t.get("assignees", [])],
             "events": [e for e in state["events"] if member_id in e.get("members", [])],
@@ -826,7 +843,7 @@ def _pro_badge_progress(state, member_id):
 
 def _award_pro_badges(state, member_id):
     """Award once while enabled; archive old milestones permanently in local storage."""
-    if not state.get("pro_badge_settings", {}).get(member_id, False):
+    if not _pro_kids_enabled(state) or not state.get("pro_badge_settings", {}).get(member_id, False):
         return
     progress = _pro_badge_progress(state, member_id)
     awards = state.setdefault("pro_badge_awards", [])
@@ -846,6 +863,8 @@ def _award_pro_badges(state, member_id):
 @websocket_api.async_response
 async def ws_pro_badge_settings_save(hass, connection, msg):
     hub = hass.data.get(DOMAIN)
+    if hub is not None and not _require_pro_kids(hub, connection, msg):
+        return
     if not hub or not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Eltern können Abzeichen einstellen")
         return
@@ -872,6 +891,8 @@ async def ws_pro_badge_settings_save(hass, connection, msg):
 async def ws_pro_goal_save(hass, connection, msg):
     """PRO developer preview: set a voluntary personal savings goal."""
     hub = hass.data.get(DOMAIN)
+    if hub is not None and not _require_pro_kids(hub, connection, msg):
+        return
     if hub is None or not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Sparziele verwalten")
         return
@@ -932,6 +953,8 @@ async def ws_pro_goal_delete(hass, connection, msg):
 async def ws_pro_goal_deposit(hass, connection, msg):
     """Parents may reserve available stars for a child's PRO savings goal."""
     hub = hass.data.get(DOMAIN)
+    if hub is not None and not _require_pro_kids(hub, connection, msg):
+        return
     if hub is None or not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Eltern können Sterne für Wünsche zurücklegen")
         return
@@ -963,6 +986,8 @@ async def ws_pro_goal_deposit(hass, connection, msg):
 async def ws_pro_goal_request(hass, connection, msg):
     """A child proposes reserving stars; no points move until parent approval."""
     hub = hass.data.get(DOMAIN)
+    if hub is not None and not _require_pro_kids(hub, connection, msg):
+        return
     if hub is None:
         connection.send_error(msg["id"], "not_found", "Family Hub nicht verfügbar")
         return
@@ -1000,6 +1025,8 @@ async def ws_pro_goal_request(hass, connection, msg):
 async def ws_pro_goal_request_decide(hass, connection, msg):
     """Parent confirms a request, validating balance and target again atomically."""
     hub = hass.data.get(DOMAIN)
+    if hub is not None and not _require_pro_kids(hub, connection, msg):
+        return
     if hub is None or not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Anfragen bestätigen")
         return
@@ -1034,6 +1061,8 @@ async def ws_pro_goal_request_decide(hass, connection, msg):
 async def ws_pro_goal_complete(hass, connection, msg):
     """Parents close a fully funded wish; keep history and spent stars intact."""
     hub = hass.data.get(DOMAIN)
+    if hub is not None and not _require_pro_kids(hub, connection, msg):
+        return
     if hub is None or not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Wünsche abschließen")
         return

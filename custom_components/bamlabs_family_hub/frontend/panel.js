@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.7.0";
+const FAMILY_HUB_UI_VERSION = "1.8.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -1006,12 +1006,12 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     const installation=license.installation_id||"Wird nach dem nächsten Laden angezeigt";
     licensing.append(this.el("p",null,"Installations-ID: " + installation));
     licensing.append(this.button("📋 Installations-ID kopieren",()=>navigator.clipboard?.writeText(installation),"btn secondary"));
-    licensing.append(this.el("p",null,"Status: " + (license.verified?"✅ Lizenz verifiziert":"⚠️ Noch nicht aktiviert")));
+    licensing.append(this.el("p",null,"Status: " + (this.data._pro_access?.kids_pro?"✅ Kinder-PRO freigeschaltet":license.verified?"⚠️ Lizenz gültig, aber Kinder-PRO fehlt":"🔒 Kinder-PRO nicht freigeschaltet")));
     licensing.append(this.el("p","small",license.message||"Lizenzprüfung wird vorbereitet."));
     if(license.modules?.length) licensing.append(this.el("p","small","Lizenzmodule: " + license.modules.join(", ")));
     if(license.last_checked) licensing.append(this.el("p","small","Zuletzt online geprüft: " + new Date(license.last_checked*1000).toLocaleString("de-AT")));
     if(license.verified) licensing.append(this.button("🔄 Lizenzstatus jetzt prüfen",async()=>{
-      try{this.data._pro_license=await this._hass.callWS({type:"bamlabs_family_hub/pro_license_refresh"});this.error="";}catch(err){this.error=err.message||String(err);}this.render();
+      try{this.data._pro_license=await this._hass.callWS({type:"bamlabs_family_hub/pro_license_refresh"});this.data=await this._hass.callWS({type:"bamlabs_family_hub/state"});this.error="";}catch(err){this.error=err.message||String(err);}this.render();
     },"btn secondary"));
     const form=this.el("form","form");
     const certLabel=this.el("label",null,"Lizenzschlüssel vom BamLabs-Shop");
@@ -1022,16 +1022,16 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       e.preventDefault();
       try{
         const result=await this._hass.callWS({type:"bamlabs_family_hub/pro_license_activate",certificate:certInput.value.trim()});
-        certInput.value="";this.data._pro_license=result;this.error="";this.savedNotice="✅ Lizenz erfolgreich geprüft.";
+        certInput.value="";this.data=await this._hass.callWS({type:"bamlabs_family_hub/state"});this.data._pro_license=result;this.error="";this.savedNotice="✅ Lizenz erfolgreich geprüft.";
       }catch(err){this.error=err.message||String(err);this.savedNotice="";}
       this.render();
     });
     licensing.append(form);
     if(license.verified)licensing.append(this.button("Lizenz auf dieser Installation entfernen",async()=>{
       if(!confirm("PRO-Lizenz wirklich aus dieser Installation entfernen?"))return;
-      try{this.data._pro_license=await this._hass.callWS({type:"bamlabs_family_hub/pro_license_clear"});this.error="";}catch(err){this.error=err.message||String(err);}this.render();
+      try{this.data._pro_license=await this._hass.callWS({type:"bamlabs_family_hub/pro_license_clear"});this.data=await this._hass.callWS({type:"bamlabs_family_hub/state"});this.error="";}catch(err){this.error=err.message||String(err);}this.render();
     },"btn secondary"));
-    licensing.append(this.el("p","small","Aktivierung benötigt eine Verbindung zu bamlabs.at und den License Manager ab Version 0.4.1. Danach läuft die Prüfung automatisch etwa alle sechs Stunden; bei Internetausfall gilt eine Übergangsfrist von 14 Tagen. Die bisherigen PRO-Funktionen bleiben in dieser Vorschau im Testmodus."));
+    licensing.append(this.el("p","small","Aktivierung benötigt eine Verbindung zu bamlabs.at und den License Manager ab Version 0.4.1. Danach läuft die Prüfung automatisch etwa alle sechs Stunden; bei Internetausfall gilt eine Übergangsfrist von 14 Tagen. Wünsche und Erfolgsabzeichen sind ab dieser Version nur mit gültigem Kinder-PRO-Modul nutzbar. Kostenlose Sterne und Belohnungen bleiben unverändert."));
     intro.append(licensing);
     const maintenance=this.el("section","display-setting-card");
     maintenance.append(this.cardTitle("🛡️ Sicherheit & Datensicherung"));
@@ -1493,8 +1493,30 @@ class BamLabsFamilyHubPanel extends HTMLElement {
       section.append(form);
     }
     page.append(section);
-    this.renderProSavings(page,child);
-    this.renderProBadges(page,child);
+    if(this.data._pro_access?.kids_pro){
+      this.renderProSavings(page,child);
+      this.renderProBadges(page,child);
+    }else if(!child){
+      const pro=this.el("section","panel");
+      pro.append(this.cardTitle("👑 Zusätzliche Kinder-PRO-Funktionen"));
+      pro.append(this.el("p","small","🎁 Wünsche & Sparziele sowie 🏅 Erfolgsabzeichen sind optionale PRO-Erweiterungen. Deine normalen Sterne und Belohnungen funktionieren kostenlos weiter."));
+      pro.append(this.el("p","small","Unter ⚙️ Einstellungen → Family Hub PRO kannst du deine Lizenz aktivieren oder den Status prüfen."));
+      const old=(this.data.pro_savings_goals||[]).filter(g=>Number(g.saved||0)>0);
+      if(old.length){
+        pro.append(this.el("h3",null,"⭐ Bereits gesparte Sterne"));
+        pro.append(this.el("p","small","Bestehende Sparziele bleiben gespeichert. Du kannst sie nach erneuter Lizenzaktivierung weiterverwenden oder die Sterne jetzt zurückbuchen."));
+        for(const goal of old){
+          const who=members.find(m=>m.id===goal.member_id)?.name||"Familienmitglied";
+          const item=this.el("div","item");
+          item.append(this.el("span",null,`${who}: ${goal.title} – ${goal.saved} Sterne reserviert`));
+          item.append(this.button("⭐ Sterne zurückgeben",()=>{
+            if(confirm(`Sparziel „${goal.title}“ auflösen und ${goal.saved} Sterne für ${who} zurückbuchen?`))this.request("pro_goal_delete",{member_id:goal.member_id});
+          },"btn secondary"));
+          pro.append(item);
+        }
+      }
+      page.append(pro);
+    }
   }
   renderLists(page, child=false) {
     const lists=(this.data.family_lists || []);
@@ -2278,8 +2300,10 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     card.append(this.el("p","small","Wir zählen Aufgaben und Routine-Schritte ab Version 0.3.31. Ältere erledigte Aufgaben können wir nicht rückwirkend datieren. Deine bisherigen Sterne bleiben erhalten."));
     page.append(card);
     this.renderChallengeBlock(page,false);
-    this.renderProSavings(page,true);
-    this.renderProBadges(page,true);
+    if(this.data._pro_access?.kids_pro){
+      this.renderProSavings(page,true);
+      this.renderProBadges(page,true);
+    }
     if(completions.length) {
       const list=this.el("section","panel");
       list.append(this.cardTitle("🎉 Das hast du geschafft"));
