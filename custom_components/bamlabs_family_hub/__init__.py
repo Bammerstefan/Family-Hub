@@ -102,7 +102,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "pro_savings_goals": data.get("pro_savings_goals", []), "pro_goal_history": data.get("pro_goal_history", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", []), "overview_settings": data.get("overview_settings", {"order": ["tasks", "events", "work", "birthdays", "school", "meals"], "hidden": []})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "pro_savings_goals": data.get("pro_savings_goals", []), "pro_goal_history": data.get("pro_goal_history", []), "pro_goal_requests": data.get("pro_goal_requests", []), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", []), "overview_settings": data.get("overview_settings", {"order": ["tasks", "events", "work", "birthdays", "school", "meals"], "hidden": []})}
     lock = asyncio.Lock()
     hub_data = hass.data.setdefault(DOMAIN, {})
     hub_data.update({"state": state, "store": store, "lock": lock, "tablet_selection": {}, "hass": hass})
@@ -143,7 +143,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=1.2.0",
+            module_url=f"/{DOMAIN}_static/panel.js?v=1.3.0",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -241,7 +241,7 @@ def _visible_state(hub, connection):
             return {"_role": "tablet_picker", "members": [
                 {"id": m["id"], "name": m["name"], "color": m["color"], "avatar": m.get("avatar", "🙂")}
                 for m in state["members"]], "tasks": [], "events": [], "routines": [],
-                "point_entries": [], "task_completions": [], "rewards": [], "pro_savings_goals": [], "pro_goal_history": [], "routine_checks": [], "school_plan": [], "school_years": [], "school_year_active": {}, "school_modes": {}, "school_absences": [], "school_holiday_settings": {}, "school_holiday_cache": {}, "school_pack_settings": {}, "school_pack_checks": [], "birthday_settings": {"enabled": False}, "work_plan": [], "work_exceptions": [], "family_lists": [],
+                "point_entries": [], "task_completions": [], "rewards": [], "pro_savings_goals": [], "pro_goal_history": [], "pro_goal_requests": [], "routine_checks": [], "school_plan": [], "school_years": [], "school_year_active": {}, "school_modes": {}, "school_absences": [], "school_holiday_settings": {}, "school_holiday_cache": {}, "school_pack_settings": {}, "school_pack_checks": [], "birthday_settings": {"enabled": False}, "work_plan": [], "work_exceptions": [], "family_lists": [],
                 "external_calendars": [], "calendar_members": {}}
     member_id = _child_member(hub, connection)
     if not member_id:
@@ -254,6 +254,7 @@ def _visible_state(hub, connection):
             "rewards": state.get("rewards", []),
             "pro_savings_goals": [g for g in state.get("pro_savings_goals", []) if g.get("member_id") == member_id],
             "pro_goal_history": [g for g in state.get("pro_goal_history", []) if g.get("member_id") == member_id],
+            "pro_goal_requests": [g for g in state.get("pro_goal_requests", []) if g.get("member_id") == member_id],
             "point_entries": [e for e in state.get("point_entries", []) if e.get("member_id") == member_id],
             "task_completions": [e for e in state.get("task_completions", []) if e.get("member_id") == member_id],
             "routines": [r for r in state.get("routines", []) if member_id in r.get("member_ids", [])],
@@ -767,6 +768,7 @@ async def ws_pro_goal_delete(hass, connection, msg):
                 "label": "Sparziel aufgelöst: " + str(goal.get("title", "")), "at": dt_util.now().isoformat()})
         state["pro_savings_goals"] = [g for g in state.get("pro_savings_goals", [])
                                      if g.get("member_id") != msg["member_id"]]
+        state["pro_goal_requests"] = [r for r in state.get("pro_goal_requests", []) if r.get("member_id") != msg["member_id"]]
         await hub["store"].async_save(state)
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
@@ -804,6 +806,78 @@ async def ws_pro_goal_deposit(hass, connection, msg):
 
 
 @websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/pro_goal_request",
+    vol.Required("member_id"): str,
+    vol.Required("amount"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100000)),
+})
+@websocket_api.async_response
+async def ws_pro_goal_request(hass, connection, msg):
+    """A child proposes reserving stars; no points move until parent approval."""
+    hub = hass.data.get(DOMAIN)
+    if hub is None:
+        connection.send_error(msg["id"], "not_found", "Family Hub nicht verfügbar")
+        return
+    member_id = msg["member_id"]
+    if not _owner(connection) and _child_member(hub, connection) != member_id:
+        connection.send_error(msg["id"], "unauthorized", "Nur eigene Wünsche anfragen")
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        goal = next((g for g in state.get("pro_savings_goals", []) if g.get("member_id") == member_id), None)
+        if not goal:
+            connection.send_error(msg["id"], "not_found", "Kein Wunsch vorhanden")
+            return
+        available = sum(int(e.get("amount", 0)) for e in state.get("point_entries", []) if e.get("member_id") == member_id)
+        remaining = int(goal["target"]) - int(goal.get("saved", 0))
+        amount = msg["amount"]
+        if amount > available or amount > remaining:
+            connection.send_error(msg["id"], "invalid_data", "Nicht genügend freie Sterne")
+            return
+        requests = state.setdefault("pro_goal_requests", [])
+        # One pending request per child: replacing it prevents accidental double approvals.
+        requests[:] = [r for r in requests if r.get("member_id") != member_id]
+        requests.append({"id": uuid4().hex, "member_id": member_id, "amount": amount,
+                         "goal_title": goal["title"], "at": dt_util.now().isoformat()})
+        await hub["store"].async_save(state)
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/pro_goal_request_decide",
+    vol.Required("request_id"): str,
+    vol.Required("approve"): bool,
+})
+@websocket_api.async_response
+async def ws_pro_goal_request_decide(hass, connection, msg):
+    """Parent confirms a request, validating balance and target again atomically."""
+    hub = hass.data.get(DOMAIN)
+    if hub is None or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Eltern dürfen Anfragen bestätigen")
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        request = next((r for r in state.get("pro_goal_requests", []) if r.get("id") == msg["request_id"]), None)
+        if not request:
+            connection.send_error(msg["id"], "not_found", "Anfrage nicht mehr vorhanden")
+            return
+        member_id = request["member_id"]
+        amount = int(request["amount"])
+        if msg["approve"]:
+            goal = next((g for g in state.get("pro_savings_goals", []) if g.get("member_id") == member_id), None)
+            balance = sum(int(e.get("amount", 0)) for e in state.get("point_entries", []) if e.get("member_id") == member_id)
+            if not goal or goal.get("title") != request.get("goal_title") or amount > balance or amount > int(goal["target"]) - int(goal.get("saved", 0)):
+                connection.send_error(msg["id"], "invalid_data", "Guthaben oder Wunsch hat sich geändert; bitte neue Anfrage stellen")
+                return
+            goal["saved"] = int(goal.get("saved", 0)) + amount
+            state["point_entries"].append({"id": uuid4().hex, "kind": "pro_goal_deposit",
+                "member_id": member_id, "amount": -amount,
+                "label": "Für Wunsch gespart: " + str(goal.get("title", "")), "at": dt_util.now().isoformat()})
+        state["pro_goal_requests"] = [r for r in state.get("pro_goal_requests", []) if r.get("id") != msg["request_id"]]
+        await hub["store"].async_save(state)
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
     vol.Required("type"): f"{DOMAIN}/pro_goal_complete",
     vol.Required("member_id"): str,
 })
@@ -828,6 +902,7 @@ async def ws_pro_goal_complete(hass, connection, msg):
             "emoji": goal.get("emoji", "🎁"), "target": goal["target"],
             "at": dt_util.now().isoformat()})
         state["pro_savings_goals"] = [g for g in state["pro_savings_goals"] if g.get("member_id") != msg["member_id"]]
+        state["pro_goal_requests"] = [r for r in state.get("pro_goal_requests", []) if r.get("member_id") != msg["member_id"]]
         await hub["store"].async_save(state)
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
@@ -2879,7 +2954,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_holiday_save, ws_school_holiday_refresh, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
-        ws_reward_save, ws_reward_delete, ws_reward_redeem, ws_pro_goal_save, ws_pro_goal_delete, ws_pro_goal_deposit, ws_pro_goal_complete,
+        ws_reward_save, ws_reward_delete, ws_reward_redeem, ws_pro_goal_save, ws_pro_goal_delete, ws_pro_goal_deposit, ws_pro_goal_request, ws_pro_goal_request_decide, ws_pro_goal_complete,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
         ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_enter, ws_tablet_select, ws_tablet_settings_save, ws_display_settings_save,

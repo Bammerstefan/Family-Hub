@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.2.0";
+const FAMILY_HUB_UI_VERSION = "1.3.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], pro_savings_goals: [], pro_goal_history: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
+    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], pro_savings_goals: [], pro_goal_history: [], pro_goal_requests: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -150,7 +150,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel",pro_goal_deposit:"Sterne zurückgelegt",pro_goal_complete:"Wunsch abgeschlossen"};
+      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel",pro_goal_deposit:"Sterne zurückgelegt",pro_goal_complete:"Wunsch abgeschlossen",pro_goal_request:"Sparwunsch angefragt",pro_goal_request_decide:"Sparwunsch bearbeitet"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -1259,52 +1259,97 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   renderProSavings(page, child=false) {
     const members=this.data.members||[];
     const goals=this.data.pro_savings_goals||[];
+    const requests=this.data.pro_goal_requests||[];
     const section=this.el("section","panel");
-    section.append(this.cardTitle("👑 PRO-Vorschau · Meine großen Wünsche"));
-    section.append(this.el("p","small","Eltern legen Sterne für einen Wunsch zurück. Diese Sterne sind bis zur Einlösung nicht für andere Belohnungen verfügbar. Ohne Lizenzprüfung – nur als Entwicklervorschau."));
+    section.append(this.cardTitle(child ? "🎁 Meine Wünsche" : "🎁 PRO · Wünsche & Sparziele"));
+    section.append(this.el("p","small",child
+      ? "Du entscheidest, wie viele freie Sterne du sparen möchtest. Mama oder Papa bestätigen deinen Wunsch. Deine übrigen Sterne bleiben für kleine Belohnungen frei."
+      : "Kinder wählen selbst einen Sparbetrag. Eltern bestätigen ihn. Gesparte Sterne können nicht gleichzeitig für kleine Belohnungen ausgegeben werden."));
     for(const m of members){
       const goal=goals.find(g=>g.member_id===m.id);
+      const pending=requests.find(r=>r.member_id===m.id);
       const balance=Math.max(0,this.pointBalance(m.id));
-      const card=this.el("div","pro-goal-card");card.style.cssText="padding:14px;margin:12px 0;border-radius:12px;background:var(--card-background-color,rgba(128,128,128,.12));min-width:0;"; card.style.borderLeft=`5px solid ${m.color||"#16a3a3"}`;
+      const card=this.el("div","pro-goal-card");
+      card.style.cssText="padding:16px;margin:12px 0;border-radius:14px;background:var(--card-background-color,rgba(128,128,128,.12));min-width:0;overflow-wrap:anywhere";
+      card.style.borderLeft=`5px solid ${m.color||"#16a3a3"}`;
       card.append(this.el("strong",null,`${m.avatar||"🌟"} ${m.name}`));
       if(goal){
-        card.append(this.el("div","pro-goal-label",`${goal.emoji||"🎁"} ${goal.title}`));
+        card.append(this.el("h3",null,`${goal.emoji||"🎁"} ${goal.title}`));
         const target=Math.max(1,Number(goal.target)||1);
         const saved=Math.max(0,Number(goal.saved)||0);
-        const done=Math.min(100,Math.round(saved/target*100));
-        const bar=this.el("div","pro-goal-bar");bar.style.cssText="height:12px;border-radius:12px;background:rgba(128,128,128,.25);overflow:hidden;margin:10px 0;"; const fill=this.el("div","pro-goal-fill");fill.style.background="#21a88b";fill.style.height="100%";fill.style.width=`${done}%`;bar.append(fill);
-        card.append(bar,this.el("div","small",`⭐ ${saved} von ${target} Sternen gespart · ${done}% · ${balance} frei`));
-        if(saved>=target)card.append(this.el("div","pro-goal-ready","🎉 Wunsch vollständig angespart!"));
+        const remaining=Math.max(0,target-saved);
+        const percent=Math.min(100,Math.round(saved/target*100));
+        const bar=this.el("div","pro-goal-bar");
+        bar.style.cssText="height:14px;border-radius:12px;background:rgba(128,128,128,.25);overflow:hidden;margin:12px 0";
+        const fill=this.el("div","pro-goal-fill");fill.style.cssText=`background:#21a88b;height:100%;width:${percent}%`;bar.append(fill);
+        card.append(bar,this.el("div",null,`⭐ ${saved} von ${target} Sternen gespart (${percent} %)`));
+        const stats=this.el("div","pro-saving-stats");
+        stats.style.cssText="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0";
+        for(const [title,value] of [["⭐ Für kleine Belohnungen frei",balance],["🎁 Bis zum Wunsch fehlen",remaining]]){
+          const tile=this.el("div",null);
+          tile.style.cssText="padding:12px;border-radius:12px;background:var(--secondary-background-color,rgba(128,128,128,.13));min-width:0";
+          tile.append(this.el("div","small",title),this.el("strong",null,String(value)));
+          stats.append(tile);
+        }
+        card.append(stats);
+        if(saved>=target)card.append(this.el("div","pro-goal-ready","🎉 Geschafft! Dein Wunsch ist vollständig angespart."));
+        if(pending){
+          card.append(this.el("p","notice",child
+            ? `⏳ ${pending.amount} Sterne angefragt. Warte auf die Bestätigung deiner Eltern.`
+            : `⏳ ${m.name} möchte ${pending.amount} Sterne für „${goal.title}“ sparen.`));
+          if(!child){
+            const actions=this.el("div","actions");
+            actions.append(this.button("✅ Bestätigen",()=>this.request("pro_goal_request_decide",{request_id:pending.id,approve:true}),"btn"));
+            actions.append(this.button("❌ Ablehnen",()=>this.request("pro_goal_request_decide",{request_id:pending.id,approve:false}),"btn secondary"));
+            card.append(actions);
+          }
+        }
+        if(child && remaining>0 && balance>0){
+          const max=Math.min(balance,remaining);
+          const form=this.el("form","formgrid");
+          const amount=this.input("Wie viele Sterne möchtest du sparen?","number",String(Math.min(10,max)),"proWishAmount");
+          const input=amount.querySelector("input");input.min="1";input.max=String(max);input.step="1";input.required=true;
+          const options=this.el("div","actions");
+          for(const [label,n] of [["⭐ 5",5],["⭐ 10",10],["⭐ Alle freien",max]]){
+            if(n<=max)options.append(this.button(label,()=>{input.value=String(n);},"btn secondary"));
+          }
+          const submit=this.el("button","btn","🙋 Eltern um Bestätigung bitten");submit.type="submit";
+          form.append(amount,options,submit);
+          form.addEventListener("submit",e=>{
+            e.preventDefault();const n=Number(input.value);
+            if(!Number.isInteger(n)||n<1||n>max){this.error=`Bitte 1 bis ${max} Sterne auswählen.`;this.render();return;}
+            this.request("pro_goal_request",{member_id:m.id,amount:n});
+          });
+          card.append(form);
+          card.append(this.el("p","small",`Beispiel: Wenn du ${Math.min(20,max)} Sterne sparst, bleiben ${balance-Math.min(20,max)} Sterne für kleine Belohnungen frei.`));
+        }
         if(!child){
           if(saved<target && balance>0){
             const deposit=this.el("form","formgrid");
-            const amount=this.input("Sterne zurücklegen","number",String(Math.min(balance,target-saved)),"proDepositAmount");
-            amount.querySelector("input").min="1";
-            amount.querySelector("input").max=String(Math.min(balance,target-saved));
-            amount.querySelector("input").required=true;
-            const button=this.el("button","btn","⭐ Sterne sparen");button.type="submit";
+            const amount=this.input("Direkt durch Eltern zurücklegen","number",String(Math.min(balance,remaining)),"proDepositAmount");
+            amount.querySelector("input").min="1";amount.querySelector("input").max=String(Math.min(balance,remaining));amount.querySelector("input").required=true;
+            const button=this.el("button","btn secondary","⭐ Direkt sparen");button.type="submit";
             deposit.append(amount,button);
             deposit.addEventListener("submit",e=>{e.preventDefault();this.request("pro_goal_deposit",{member_id:m.id,amount:Number(amount.querySelector("input").value)});});
             card.append(deposit);
           }
           if(saved>=target)card.append(this.button("🎁 Wunsch als erfüllt markieren",()=>{if(confirm(`Wunsch „${goal.title}“ für ${m.name} abschließen?`))this.request("pro_goal_complete",{member_id:m.id});},"btn"));
         }
-      }else card.append(this.el("div","small","Noch kein Sparziel hinterlegt."));
+      }else card.append(this.el("div","small",child?"Hier ist noch kein großer Wunsch eingetragen.":"Noch kein Wunsch hinterlegt."));
       if(!child){
         const form=this.el("form","formgrid");
         const title=this.input("Wunsch","text",goal?.title||"","proGoalTitle");title.querySelector("input").required=true;
-        const target=this.input("Sterne-Ziel","number",String(goal?.target||100),"proGoalTarget");target.querySelector("input").min="1";target.querySelector("input").max="100000";
+        const target=this.input("Benötigte Sterne","number",String(goal?.target||100),"proGoalTarget");target.querySelector("input").min="1";target.querySelector("input").max="100000";
         const emoji=this.input("Symbol","text",goal?.emoji||"🎁","proGoalEmoji");emoji.querySelector("input").maxLength=8;
-        const save=this.el("button","btn",goal?"Sparziel ändern":"Sparziel anlegen");save.type="submit";
+        const save=this.el("button","btn",goal?"Wunsch ändern":"Wunsch anlegen");save.type="submit";
         form.append(title,target,emoji,save);
         form.addEventListener("submit",e=>{e.preventDefault();this.request("pro_goal_save",{member_id:m.id,title:title.querySelector("input").value,target:Number(target.querySelector("input").value),emoji:emoji.querySelector("input").value});});
         card.append(form);
-        if(goal)card.append(this.button("Sparziel entfernen",()=>{if(confirm(`Sparziel von ${m.name} entfernen?`))this.request("pro_goal_delete",{member_id:m.id});},"btn secondary"));
+        if(goal)card.append(this.button("Wunsch entfernen (Sterne zurückgeben)",()=>{if(confirm(`Wunsch von ${m.name} entfernen und die gesparten Sterne zurückgeben?`))this.request("pro_goal_delete",{member_id:m.id});},"btn secondary"));
       }
       const history=(this.data.pro_goal_history||[]).filter(h=>h.member_id===m.id).slice().reverse().slice(0,5);
       if(history.length){
-        const historyWrap=this.el("div","pro-goal-history");
-        historyWrap.append(this.el("strong",null,"🎉 Erfüllte Wünsche"));
+        const historyWrap=this.el("div","pro-goal-history");historyWrap.append(this.el("strong",null,"🎉 Erfüllte Wünsche"));
         for(const h of history)historyWrap.append(this.el("div","small",`${h.emoji||"🎁"} ${h.title} · ⭐ ${h.target} · ${new Date(h.at).toLocaleDateString("de-DE")}`));
         card.append(historyWrap);
       }
@@ -1314,7 +1359,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   }
   renderProBadges(page) {
     const members=this.data.members||[];
-    const section=this.el("section","panel");section.append(this.cardTitle("🏅 PRO-Vorschau · Meine Abzeichen"));
+    const section=this.el("section","panel");section.append(this.cardTitle("🏅 Meine Abzeichen"));
     section.append(this.el("p","small","Abzeichen zeigen persönliche Meilensteine – ohne Vergleich mit anderen Kindern."));
     for(const m of members){
       const completed=(this.data.task_completions||[]).filter(e=>e.member_id===m.id).length;
