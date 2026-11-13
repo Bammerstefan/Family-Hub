@@ -1,10 +1,10 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.3.0";
+const FAMILY_HUB_UI_VERSION = "1.4.0";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({mode: "open"});
-    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], pro_savings_goals: [], pro_goal_history: [], pro_goal_requests: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
+    this.data = {school_years:[],school_year_active:{},birthday_settings:{enabled:false,days_before:7,hour:8},members: [], tasks: [], routines: [], routine_checks: [], events: [], external_calendars: [], calendar_members: {}, rewards: [], pro_savings_goals: [], pro_goal_history: [], pro_goal_requests: [], pro_badge_settings: {}, pro_badge_awards: [], point_entries: [], task_completions: [], school_plan: [], school_modes: {}, school_absences: [], school_holiday_settings: {}, school_holiday_cache: {}, school_pack_settings: {}, school_pack_checks: [], work_plan: [], work_exceptions: [], family_lists: [], family_challenge: {enabled:false,goal:30}, overview_settings:{order:["tasks","events","work","birthdays","school","meals"],hidden:[]}};
     this.externalEvents = [];
     this.externalSources = [];
     this.externalError = "";
@@ -150,7 +150,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel",pro_goal_deposit:"Sterne zurückgelegt",pro_goal_complete:"Wunsch abgeschlossen",pro_goal_request:"Sparwunsch angefragt",pro_goal_request_decide:"Sparwunsch bearbeitet"};
+      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel",pro_goal_deposit:"Sterne zurückgelegt",pro_goal_complete:"Wunsch abgeschlossen",pro_goal_request:"Sparwunsch angefragt",pro_goal_request_decide:"Sparwunsch bearbeitet",pro_badge_settings_save:"Abzeichen-Einstellung"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -315,6 +315,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     style.textContent += `.kid-lesson-entry{display:block;padding:10px 12px;min-width:0;overflow-wrap:normal}.kid-lesson-info{display:flex;flex-wrap:wrap;align-items:center;gap:5px 12px;min-width:0}.kid-lesson-time{display:inline-block;flex:0 0 auto;font-size:12px;font-weight:750;color:var(--secondary-text-color,#687386);white-space:nowrap}.kid-lesson-entry .kid-week-entry-text{flex:1 1 125px;min-width:0;overflow-wrap:break-word;word-break:normal}.kid-lesson-entry.is-current{outline:2px solid var(--kid-color,#3b82f6);background:color-mix(in srgb,var(--kid-color,#3b82f6) 12%,var(--secondary-background-color,#f1f5fb))}.kid-lesson-entry.is-past{opacity:.7}.kid-school-status{margin:12px 0;padding:12px 14px;border-radius:12px;background:color-mix(in srgb,var(--kid-color,#3b82f6) 13%,var(--card-background-color,#fff));border:1px solid var(--kid-color,#3b82f6);line-height:1.5}.kid-routines-fold{margin-top:12px;border:1px solid var(--divider-color,#dde5ef);border-radius:12px;padding:10px 12px}.kid-routines-fold summary{cursor:pointer;list-style:revert;padding:3px}.kid-routines-fold .kid-week-entry{margin-top:8px}@media(max-width:450px){.kid-lesson-info{gap:3px 10px}.kid-lesson-entry .kid-week-entry-text{flex-basis:100%}}`;
     style.textContent += `.school-pack-settings{border:1px solid var(--divider-color,#999);border-radius:15px;padding:13px;margin:14px 0;min-width:0}.school-pack-settings>.btn{width:100%;text-align:left}.school-pack-switch{display:flex;align-items:center;gap:12px;margin:15px 0;cursor:pointer}.school-pack-switch input{width:23px;height:23px}.school-pack-subject{display:flex;flex-wrap:wrap;align-items:end;gap:8px;margin:12px 0;padding:11px;background:var(--secondary-background-color,#eee);border-radius:12px}.school-pack-subject>.field{flex:1 1 230px;min-width:0}.school-pack-subject input{max-width:100%;box-sizing:border-box}.school-pack-subject button{flex:none;min-height:43px}.school-pack-days{display:flex;flex-wrap:wrap;gap:10px;margin:15px 0}.school-pack-child{border-top:5px solid var(--kid-color,#3b82f6)}.school-pack-progress{font-size:18px;font-weight:800;margin:12px 0}.school-pack-item{display:flex;align-items:center;gap:14px;margin:10px 0;border-radius:14px;background:var(--secondary-background-color,#eee);padding:16px;min-height:55px;cursor:pointer}.school-pack-item input{width:25px;height:25px;flex:none;accent-color:var(--kid-color,#3b82f6)}.school-pack-item span{display:flex;flex-direction:column;gap:5px;min-width:0}.school-pack-item strong{font-size:17px;overflow-wrap:break-word}.school-pack-item small{color:var(--secondary-text-color,#777)}.school-pack-item.done{opacity:.75}.school-pack-item.done strong{text-decoration:line-through}.school-pack-finished{padding:17px;border:2px solid var(--kid-color,#3b82f6);border-radius:14px;font-weight:800;margin-top:14px}`;
     style.textContent += `.work-week{grid-template-columns:repeat(auto-fit,minmax(min(100%,295px),1fr));align-items:stretch}.work-week .school-day{min-width:0}.work-entry{display:grid;grid-template-columns:32px minmax(0,1fr);align-items:start;gap:10px;padding:12px}.work-entry .school-entry-icon{font-size:24px;line-height:1.4}.work-entry-info{min-width:0;overflow-wrap:break-word;word-break:normal}.work-entry-info strong{font-size:16px;line-height:1.35}.work-entry-info .small{font-size:13px;line-height:1.5;overflow-wrap:normal;white-space:normal}.work-entry-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px;margin-top:2px}.work-entry-actions .btn{min-width:42px;min-height:40px;flex:none}.hub-content-start{scroll-margin-top:14px;height:1px}.work-date-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:12px;margin:12px 0 22px}.work-date-card{min-width:0;padding:14px;border:1px solid var(--divider-color,#555);border-radius:15px;background:var(--secondary-background-color,#262626);display:flex;flex-direction:column;gap:10px}.work-date-person{padding:6px 9px;font-weight:700;background:var(--card-background-color,#222);border-radius:8px}.work-date-row{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:9px;background:var(--card-background-color,#222);border-radius:8px;overflow-wrap:anywhere}.work-date-row>span{min-width:0;flex:1 1 130px}.work-date-row .btn{padding:7px 10px;flex:none}@media(max-width:700px){.work-week,.work-date-grid{grid-template-columns:1fr}}`;
+    style.textContent += `.pro-badge-person{border:1px solid var(--divider-color,#666);border-left:5px solid var(--badge-color,#7d78df);border-radius:16px;padding:14px;margin:14px 0;min-width:0}.pro-badge-person h3{margin:0 0 12px}.pro-badge-switch{display:flex;gap:12px;align-items:center;padding:12px;background:var(--secondary-background-color,#333);border-radius:12px;cursor:pointer;font-weight:700}.pro-badge-switch input{accent-color:var(--primary-color,#4a9ed8);height:24px;width:24px;flex:none}.pro-badge-count{font-weight:800;margin:14px 0}.pro-badge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,175px),1fr));gap:10px}.pro-badge-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding:14px 9px;min-width:0;min-height:135px;border-radius:14px;background:var(--secondary-background-color,#333);border:1px solid var(--divider-color,#555)}.pro-badge-tile.is-unlocked{border:2px solid var(--badge-color,#7d78df)}.pro-badge-tile.is-locked{opacity:.7}.pro-badge-tile .pro-badge-icon{font-size:32px}.pro-badge-tile strong{font-size:14px;overflow-wrap:anywhere}.pro-badge-tile .small{font-size:12px}.pro-badge-tile.is-new{animation:pro-badge-pop .65s ease-out 1}@keyframes pro-badge-pop{0%{transform:scale(.88)}55%{transform:scale(1.055)}100%{transform:scale(1)}}@media(prefers-reduced-motion:reduce){.pro-badge-tile.is-new{animation:none}}@media(max-width:430px){.pro-badge-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.pro-badge-tile{min-height:125px;padding:10px 6px}}`;
     root.append(style);
     const page=this.el("main","page");
     const header=this.el("div","top");
@@ -1357,19 +1358,58 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     }
     page.append(section);
   }
-  renderProBadges(page) {
-    const members=this.data.members||[];
-    const section=this.el("section","panel");section.append(this.cardTitle("🏅 Meine Abzeichen"));
-    section.append(this.el("p","small","Abzeichen zeigen persönliche Meilensteine – ohne Vergleich mit anderen Kindern."));
-    for(const m of members){
+  renderProBadges(page, child=false) {
+    const section=this.el("section","panel pro-badges-section");
+    section.append(this.cardTitle(child ? "🏅 Meine Abzeichen" : "🏅 PRO · Abzeichen & Meilensteine"));
+    section.append(this.el("p","small",child
+      ? "Für kleine und große Erfolge bekommst du besondere Abzeichen. Du musst nicht schneller sein als andere!"
+      : "Abzeichen sind freiwillig. Pro Kind einzeln einschalten oder ausschalten. Bereits verdiente Abzeichen bleiben gespeichert."));
+    const rules=[
+      ["tasks_5","✅","5 Aufgaben geschafft","tasks",5],
+      ["tasks_10","✅","10 Aufgaben geschafft","tasks",10],
+      ["tasks_25","🏆","25 Aufgaben geschafft","tasks",25],
+      ["tasks_50","🏆","50 Aufgaben geschafft","tasks",50],
+      ["routine_10","🌈","10 Routine-Schritte","routines",10],
+      ["routine_25","🌈","25 Routine-Schritte","routines",25],
+      ["stars_100","⭐","100 Sterne gesammelt","stars",100],
+      ["wish_1","🎁","Erster Wunsch erfüllt","wishes",1]
+    ];
+    for (const m of this.data.members||[]) {
+      const enabled=this.data.pro_badge_settings?.[m.id]===true;
+      const card=this.el("div","pro-badge-person");
+      card.style.setProperty("--badge-color",m.color||"#7d78df");
+      card.append(this.el("h3",null,`${m.avatar||"🌟"} ${m.name}`));
+      if(!child){
+        const toggle=this.el("label","pro-badge-switch");
+        const check=this.el("input");check.type="checkbox";check.checked=enabled;
+        check.addEventListener("change",()=>this.request("pro_badge_settings_save",{member_id:m.id,enabled:check.checked}));
+        toggle.append(check,this.el("span",null,"Erfolgsabzeichen für dieses Kind aktivieren"));
+        card.append(toggle);
+      }
+      if(!enabled){card.append(this.el("p","small",child ? "Meine Abzeichen sind gerade ausgeschaltet." : "Ausgeschaltet – kein Abzeichen wird angezeigt."));section.append(card);continue;}
       const completed=(this.data.task_completions||[]).filter(e=>e.member_id===m.id).length;
       const routine=(this.data.routine_checks||[]).filter(e=>e.member_id===m.id).length;
-      const earned=(this.data.point_entries||[]).filter(e=>e.member_id===m.id&&e.kind==="earned").reduce((s,e)=>s+Number(e.amount||0),0);
-      const card=this.el("div","pro-goal-card");card.style.cssText="padding:14px;margin:12px 0;border-radius:12px;background:var(--card-background-color,rgba(128,128,128,.12));min-width:0;";card.style.borderLeft=`5px solid ${m.color||"#16a3a3"}`;
-      card.append(this.el("strong",null,`${m.name} · Meine Meilensteine`));
-      for(const [icon,label,achieved,needed] of [["✅","5 Aufgaben geschafft",completed,5],["🌈","10 Routinen erledigt",routine,10],["⭐","100 Sterne gesammelt",earned,100]]){
-        const line=this.el("div","pro-badge-line",`${achieved>=needed?"🏅":"🔒"} ${icon} ${label} (${Math.min(achieved,needed)}/${needed})`);card.append(line);
+      const earned=(this.data.point_entries||[]).filter(e=>e.member_id===m.id&&e.kind==="earned").reduce((s,e)=>s+Math.max(0,Number(e.amount||0)),0);
+      const wishes=(this.data.pro_goal_history||[]).filter(e=>e.member_id===m.id).length;
+      const metrics={tasks:completed,routines:routine,stars:earned,wishes};
+      const awards=(this.data.pro_badge_awards||[]).filter(a=>a.member_id===m.id);
+      const obtained=new Map(awards.map(a=>[a.badge_id,a]));
+      const unlocked=awards.length;
+      card.append(this.el("div","pro-badge-count",`🏅 ${unlocked} von ${rules.length} Abzeichen gesammelt`));
+      const grid=this.el("div","pro-badge-grid");
+      for(const [id,icon,label,kind,target] of rules){
+        const award=obtained.get(id);
+        const tile=this.el("div",`pro-badge-tile ${award?"is-unlocked":"is-locked"}`);
+        const isNew=award?.at && (Date.now()-new Date(award.at).getTime())<20000;
+        if(isNew)tile.classList.add("is-new");
+        tile.append(this.el("div","pro-badge-icon",award?icon:"🔒"));
+        tile.append(this.el("strong",null,label));
+        tile.append(this.el("span","small",award
+          ? `🎉 Verdient am ${new Date(award.at).toLocaleDateString("de-DE")}`
+          : `${Math.min(metrics[kind],target)} / ${target} geschafft`));
+        grid.append(tile);
       }
+      card.append(grid);
       section.append(card);
     }
     page.append(section);
@@ -1420,7 +1460,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     }
     page.append(section);
     this.renderProSavings(page,child);
-    if(!child)this.renderProBadges(page);
+    this.renderProBadges(page,child);
   }
   renderLists(page, child=false) {
     const lists=(this.data.family_lists || []);
@@ -2205,7 +2245,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     page.append(card);
     this.renderChallengeBlock(page,false);
     this.renderProSavings(page,true);
-    this.renderProBadges(page);
+    this.renderProBadges(page,true);
     if(completions.length) {
       const list=this.el("section","panel");
       list.append(this.cardTitle("🎉 Das hast du geschafft"));

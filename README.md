@@ -47,3 +47,7 @@ Der Eltern-Menüpunkt „Wochenplan“ zeigt sieben Tage mit Aufgaben und Termin
 Unter Einstellungen → Aufgabenerinnerungen aktivieren. Täglich zur gewählten Uhrzeit
 erscheint eine Home-Assistant-Benachrichtigung mit heute fälligen und optional überfälligen Aufgaben.
 Mit „Test-Erinnerung“ lässt sich die Funktion manuell prüfen. Kein Handy-Push.
+
+
+## PRO-Vorschau v1.4.0
+Abzeichen sind pro Kind freiwillig aktivierbar. Für einen öffentlichen Verkauf ist die BamLabs-Lizenzprüfung noch einzubauen.
