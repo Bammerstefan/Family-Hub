@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.9.0";
+const FAMILY_HUB_UI_VERSION = "1.9.1";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -152,7 +152,7 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     try {
       this.data = await this._hass.callWS({type:`bamlabs_family_hub/${type}`, ...payload});
       this.error = "";
-      const saveLabels={display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel",pro_goal_deposit:"Sterne zurückgelegt",pro_goal_complete:"Wunsch abgeschlossen",pro_goal_request:"Sparwunsch angefragt",pro_goal_request_decide:"Sparwunsch bearbeitet",pro_badge_settings_save:"Abzeichen-Einstellung"};
+      const saveLabels={points_adjust:"Punktestand",display_settings_save:"Bildschirmmodus",calendar_select:"Kalenderauswahl",calendar_member_assign:"Kalenderzuordnung",reminder_settings_save:"Erinnerungseinstellungen",push_settings_save:"Handy-Einstellungen",member_save:"Familienmitglied",task_save:"Aufgabe",routine_save:"Tagesablauf",school_save:"Wochenplan-Eintrag",school_mode_save:"Plantyp",school_absence_save:"Ferien / Abwesenheit",school_pack_config_save:"Schultaschen-Packliste",work_save:"Dienstplan",list_save:"Liste",list_item_add:"Listeneintrag",list_reset:"Liste",tablet_settings_save:"Tablet-Zugang",challenge_settings_save:"Familien-Challenge",family_reward_claim:"Familienbelohnung",event_save:"Termin",reward_save:"Belohnung",pro_goal_save:"PRO-Sparziel",pro_goal_deposit:"Sterne zurückgelegt",pro_goal_complete:"Wunsch abgeschlossen",pro_goal_request:"Sparwunsch angefragt",pro_goal_request_decide:"Sparwunsch bearbeitet",pro_badge_settings_save:"Abzeichen-Einstellung"};
       this.savedNotice = saveLabels[type] ? `✅ ${saveLabels[type]} erfolgreich gespeichert.` : "";
       if(type === "tablet_settings_save" && this.childAccounts) this.childAccounts.tablet_user_id=payload.user_id;
       this.editMember = null;
@@ -2640,7 +2640,35 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     });
     return form;
   }
+  renderPointsAdmin(page) {
+    if(this.data._role !== "admin") return;
+    const panel=this.el("section","panel");
+    panel.append(this.cardTitle("⭐ Punkte & Sterne verwalten"));
+    panel.append(this.el("p","small","Verfügbare Sterne aller Familienmitglieder. Bereits eingelöste oder zurückgelegte Sterne bleiben unverändert."));
+    for(const m of this.data.members||[]) {
+      const balance=this.pointBalance(m.id);
+      const row=this.el("div","panel");
+      row.append(this.el("strong",null,`${m.avatar||"🙂"} ${m.name} · ⭐ ${balance} Punkte`));
+      const form=this.el("div","formgrid");
+      const amount=this.input("Anzahl Punkte","number","1","pointAmount");
+      const input=amount.querySelector("input"); input.min="1"; input.max="1000000"; input.step="1";
+      const reason=this.input("Grund (optional)","text","","pointReason"); reason.querySelector("input").maxLength=180;
+      form.append(amount,reason);
+      const actions=this.el("div","actions");
+      const change=(operation)=>{
+        const n=Number(input.value);
+        if(operation!=="reset" && (!Number.isSafeInteger(n)||n<1||n>1000000)){alert("Bitte eine gültige Anzahl eingeben.");return;}
+        if(operation==="subtract" && n>balance){alert("Nicht genügend verfügbare Punkte.");return;}
+        if(operation!=="add" && !confirm(operation==="reset"?`Alle verfügbaren Punkte von ${m.name} zurücksetzen?`:`${n} Punkte von ${m.name} abziehen?`))return;
+        this.request("points_adjust",{member_id:m.id,operation,amount:operation==="reset"?1:n,reason:reason.querySelector("input").value});
+      };
+      actions.append(this.button("+ Punkte hinzufügen",()=>change("add")),this.button("− Punkte abziehen",()=>change("subtract"),"btn secondary danger"),this.button("Zurücksetzen",()=>change("reset"),"btn secondary danger"));
+      row.append(form,actions);panel.append(row);
+    }
+    page.append(panel);
+  }
   renderMembers(page) {
+    this.renderPointsAdmin(page);
     const card=this.el("section","panel");card.append(this.cardTitle("Familienmitglieder"));
     const add=this.button(this.editMember?"Bearbeitung abbrechen":"+ Familienmitglied hinzufügen",()=>{this.editMember=this.editMember?null:{name:"",color:"#3B82F6",avatar:"🙂",role:"child"};this.render();});card.append(add);
     if(this.editMember){

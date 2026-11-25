@@ -17,7 +17,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import voluptuous as vol
 from homeassistant.components import panel_custom, websocket_api
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.components import persistent_notification
@@ -138,6 +138,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 await _fh_check_activated_license(hass, hub_data)
             if now.hour == 3 and now.minute < 5:
                 await _refresh_school_holidays(hass)
+        @callback
         def _schedule_tick(now):
             hass.async_create_task(_reminder_tick(now))
         hub_data["reminder_unsubscribe"] = async_track_time_change(
@@ -155,7 +156,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=1.9.0",
+            module_url=f"/{DOMAIN}_static/panel.js?v=1.9.1",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -817,6 +818,45 @@ async def ws_reward_redeem(hass, connection, msg):
         hub["state"]["point_entries"].append({"id": uuid4().hex, "kind": "redeemed", "member_id": member["id"],
             "amount": -reward["cost"], "label": reward["title"], "at": dt_util.now().isoformat()})
         await hub["store"].async_save(hub["state"])
+        connection.send_result(msg["id"], _visible_state(hub, connection))
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): f"{DOMAIN}/points_adjust",
+    vol.Required("member_id"): str,
+    vol.Required("operation"): vol.In(("add", "subtract", "reset")),
+    vol.Optional("amount", default=1): vol.All(int, vol.Range(min=1, max=1000000)),
+    vol.Optional("reason", default=""): vol.All(str, vol.Length(max=180)),
+})
+@websocket_api.async_response
+async def ws_points_adjust(hass, connection, msg):
+    hub = hass.data.get(DOMAIN)
+    if not hub or not _owner(connection):
+        connection.send_error(msg["id"], "unauthorized", "Nur Administratoren dürfen Punkte ändern")
+        return
+    async with hub["lock"]:
+        state = hub["state"]
+        member_id = msg["member_id"]
+        if not any(m["id"] == member_id for m in state["members"]):
+            connection.send_error(msg["id"], "not_found", "Person nicht gefunden")
+            return
+        entries = state["point_entries"]
+        balance = sum(e["amount"] for e in entries if e["member_id"] == member_id)
+        op = msg["operation"]
+        amount = msg["amount"] if op == "add" else -msg["amount"] if op == "subtract" else -max(0, balance)
+        if amount < 0 and balance + amount < 0:
+            connection.send_error(msg["id"], "invalid_data", "Nicht genügend verfügbare Punkte")
+            return
+        if amount:
+            entry = {"id": uuid4().hex, "kind": "manual_adjustment", "member_id": member_id,
+                     "amount": amount, "label": msg["reason"].strip() or "Manuelle Punkteänderung",
+                     "at": dt_util.now().isoformat()}
+            entries.append(entry)
+            try:
+                await hub["store"].async_save(state)
+            except Exception:
+                entries.remove(entry)
+                raise
         connection.send_result(msg["id"], _visible_state(hub, connection))
 
 
@@ -3202,7 +3242,7 @@ def _register_commands_once(hass: HomeAssistant) -> None:
         ws_task_save, ws_task_toggle, ws_task_delete,
         ws_routine_save, ws_routine_delete, ws_routine_toggle, ws_school_mode_save, ws_school_year_start, ws_school_year_restore, ws_school_save, ws_school_delete, ws_school_absence_save, ws_school_absence_delete, ws_school_holiday_save, ws_school_holiday_refresh, ws_school_pack_config_save, ws_school_pack_toggle, ws_work_save, ws_work_delete, ws_work_exception_save, ws_work_exception_delete, ws_work_alert_save,
         ws_list_save, ws_list_item_add, ws_list_item_toggle, ws_list_item_delete, ws_list_reset, ws_list_delete,
-        ws_reward_save, ws_reward_delete, ws_reward_redeem, ws_pro_goal_save, ws_pro_goal_delete, ws_pro_goal_deposit, ws_pro_goal_request, ws_pro_goal_request_decide, ws_pro_goal_complete, ws_pro_badge_settings_save,
+        ws_reward_save, ws_reward_delete, ws_reward_redeem, ws_points_adjust, ws_pro_goal_save, ws_pro_goal_delete, ws_pro_goal_deposit, ws_pro_goal_request, ws_pro_goal_request_decide, ws_pro_goal_complete, ws_pro_badge_settings_save,
         ws_event_save, ws_event_delete,
         ws_calendar_sources, ws_calendar_select, ws_calendar_member_assign, ws_calendar_events,
         ws_child_accounts, ws_child_assign, ws_child_qr, ws_tablet_enter, ws_tablet_select, ws_tablet_settings_save, ws_display_settings_save,
