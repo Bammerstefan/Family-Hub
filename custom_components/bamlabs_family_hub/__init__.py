@@ -106,7 +106,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data = await store.async_load()
     if not isinstance(data, dict):
         data = {}
-    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "pro_savings_goals": data.get("pro_savings_goals", []), "pro_goal_history": data.get("pro_goal_history", []), "pro_goal_requests": data.get("pro_goal_requests", []), "pro_badge_settings": data.get("pro_badge_settings", {}), "pro_badge_awards": data.get("pro_badge_awards", []), "pro_installation_id": data.get("pro_installation_id") or uuid4().hex, "pro_license_token": data.get("pro_license_token", ""), "pro_license_public_key": data.get("pro_license_public_key", ""), "pro_license_checked_at": data.get("pro_license_checked_at", 0), "pro_license_remote_status": data.get("pro_license_remote_status", ""), "pro_license_last_attempt": data.get("pro_license_last_attempt", 0), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", []), "overview_settings": data.get("overview_settings", {"order": ["tasks", "events", "work", "birthdays", "school", "meals"], "hidden": []})}
+    state = {"members": data.get("members", []), "tasks": data.get("tasks", []), "events": data.get("events", []), "external_calendars": data.get("external_calendars", []), "calendar_members": data.get("calendar_members", {}), "child_users": data.get("child_users", {}), "tablet_user_id": data.get("tablet_user_id", ""), "rewards": data.get("rewards", []), "pro_savings_goals": data.get("pro_savings_goals", []), "pro_goal_history": data.get("pro_goal_history", []), "pro_goal_requests": data.get("pro_goal_requests", []), "pro_badge_settings": data.get("pro_badge_settings", {}), "pro_badge_awards": data.get("pro_badge_awards", []), "pro_installation_id": data.get("pro_installation_id") or uuid4().hex, "pro_license_token": data.get("pro_license_token", ""), "pro_license_public_key": data.get("pro_license_public_key", ""), "pro_license_checked_at": data.get("pro_license_checked_at", 0), "pro_license_remote_status": data.get("pro_license_remote_status", ""), "pro_license_last_attempt": data.get("pro_license_last_attempt", 0), "point_entries": data.get("point_entries", []), "task_completions": data.get("task_completions", []), "reminder_settings": data.get("reminder_settings", {"enabled": False, "hour": 8, "include_overdue": True}), "reminder_last_sent": data.get("reminder_last_sent", ""), "push_settings": data.get("push_settings", {"enabled": False, "devices": {}}), "push_last_sent": data.get("push_last_sent", {}), "push_sent_at": data.get("push_sent_at", {}), "routines": data.get("routines", []), "routine_checks": data.get("routine_checks", []), "school_plan": data.get("school_plan", []), "school_years": data.get("school_years", []), "school_year_active": data.get("school_year_active", {}), "school_modes": data.get("school_modes", {}), "school_absences": data.get("school_absences", []), "school_holiday_settings": data.get("school_holiday_settings", {}), "school_holiday_cache": data.get("school_holiday_cache", {}), "school_pack_settings": data.get("school_pack_settings", {}), "school_pack_checks": data.get("school_pack_checks", []), "work_plan": data.get("work_plan", []), "work_exceptions": data.get("work_exceptions", []), "work_alert": data.get("work_alert", {"enabled": False, "minutes": 30}), "work_alert_sent": data.get("work_alert_sent", []), "family_lists": data.get("family_lists", []), "display_settings": data.get("display_settings", {"enabled": False, "photos": [], "rotate_seconds": 30}), "family_challenge": data.get("family_challenge", {"enabled": False, "goal": 30}), "family_reward_claims": data.get("family_reward_claims", []), "birthday_settings": data.get("birthday_settings", {"enabled": False, "days_before": 7, "hour": 8}), "birthday_last_sent": data.get("birthday_last_sent", ""), "notification_center": data.get("notification_center", {"quiet_enabled": False, "quiet_start": 21, "quiet_end": 7, "categories": {}}), "extra_alert_sent": data.get("extra_alert_sent", []), "overview_settings": data.get("overview_settings", {"order": ["tasks", "events", "work", "birthdays", "school", "meals"], "hidden": []})}
     # Persist the installation identifier immediately, even if the family makes no edits.
     if not data.get("pro_installation_id"):
         await store.async_save(state)
@@ -156,7 +156,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             frontend_url_path=PANEL_URL,
             sidebar_title="Family Hub",
             sidebar_icon="mdi:home-heart",
-            module_url=f"/{DOMAIN}_static/panel.js?v=1.9.1",
+            module_url=f"/{DOMAIN}_static/panel.js?v=1.9.2",
             require_admin=False,
         )
         hub_data["panel_registered"] = True
@@ -1506,7 +1506,7 @@ async def _send_task_reminder(hass, force=False):
     async with hub["lock"]:
         state = hub["state"]
         settings = state.get("reminder_settings", {})
-        now = dt_util.now()
+        now = _reminder_local_now(hass)
         today = now.date().isoformat()
         if not force:
             if not settings.get("enabled", False) or now.hour != int(settings.get("hour", 8)):
@@ -1594,13 +1594,18 @@ def _mobile_services(hass):
     return {target["id"] for target in _mobile_targets(hass)}
 
 
+def _reminder_local_now(hass):
+    """Use the configured HA timezone explicitly, including DST."""
+    return dt_util.utcnow().astimezone(dt_util.get_time_zone(hass.config.time_zone) or dt_util.DEFAULT_TIME_ZONE)
+
+
 async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
     """Send a daily private digest to the configured mobile device for each member."""
     hub = hass.data.get(DOMAIN)
     if not hub or "state" not in hub:
         return {"sent": 0, "reason": "not_ready"}
     available = set(_mobile_services(hass))
-    now = dt_util.now()
+    now = _reminder_local_now(hass)
     today = now.date().isoformat()
     async with hub["lock"]:
         state = hub["state"]
@@ -1657,12 +1662,16 @@ async def _send_mobile_reminders(hass, *, test_member=None, test_target=None):
                      "data": {"url": "/" + PANEL_URL, "clickAction": "/" + PANEL_URL}}, blocking=True)
         except Exception as err:
             errors.append(f"{member['name']}: {err}")
+            _LOGGER.warning("Family Hub mobile reminder failed at %s: %s", _reminder_local_now(hass).isoformat(), type(err).__name__)
             continue
         sent += 1
         if test_member is None:
             async with hub["lock"]:
                 hub["state"].setdefault("push_last_sent", {})[mid] = today
+                sent_at = _reminder_local_now(hass).isoformat()
+                hub["state"].setdefault("push_sent_at", {})[mid] = sent_at
                 await hub["store"].async_save(hub["state"])
+            _LOGGER.warning("Family Hub mobile reminder accepted by notify service: scheduled=%s %02d:00, sent=%s", today, int(member_hours.get(mid, reminder.get("hour", 8))), sent_at)
     return {"sent": sent, "errors": errors[:5]}
 
 
@@ -1674,7 +1683,7 @@ async def ws_push_diagnose(hass, connection, msg):
     if not hub or not _owner(connection):
         connection.send_error(msg["id"], "unauthorized", "Nur Administratoren")
         return
-    now = dt_util.now()
+    now = _reminder_local_now(hass)
     today = now.date().isoformat()
     async with hub["lock"]:
         state = hub["state"]
@@ -1683,6 +1692,7 @@ async def ws_push_diagnose(hass, connection, msg):
         members = list(state.get("members", []))
         tasks = list(state.get("tasks", []))
         last = dict(state.get("push_last_sent", {}))
+        sent_times = dict(state.get("push_sent_at", {}))
         devices = dict(push.get("devices", {}))
         hours = dict(push.get("hours", {}))
         per_member_overdue = dict(push.get("include_overdue", {}))
@@ -1713,8 +1723,8 @@ async def ws_push_diagnose(hass, connection, msg):
             reason = "Alle Bedingungen erfüllt. Die automatische Prüfung erfolgt alle fünf Minuten."
         results.append({"name": member.get("name", "Person"), "hour": hour, "due": due_count,
                         "enabled": enabled, "device": bool(dev), "sent_today": sent_today,
-                        "reason": reason})
-    connection.send_result(msg["id"], {"local_time": now.strftime("%d.%m.%Y %H:%M"), "members": results})
+                        "reason": reason, "sent_at": sent_times.get(mid, "") if sent_today else ""})
+    connection.send_result(msg["id"], {"local_time": now.strftime("%d.%m.%Y %H:%M"), "timezone": hass.config.time_zone, "members": results})
 
 
 @websocket_api.websocket_command({vol.Required("type"): f"{DOMAIN}/push_devices"})
@@ -2498,7 +2508,7 @@ async def _send_work_alerts(hass):
         targets = dict(state.get("push_settings", {}).get("devices", {}))
         available = set(_mobile_services(hass))
         sent = set(state.get("work_alert_sent", []))
-        now = dt_util.now()
+        now = _reminder_local_now(hass)
         jobs = []
         for member in members:
             if not _notify_category(state, member["id"], "work") or _notify_in_quiet(state, now):
@@ -2950,7 +2960,7 @@ async def _send_birthday_reminders(hass):
     hub = hass.data.get(DOMAIN)
     if not hub or "state" not in hub:
         return
-    now = dt_util.now()
+    now = _reminder_local_now(hass)
     today = now.date()
     async with hub["lock"]:
         state = hub["state"]
@@ -3050,7 +3060,7 @@ async def _send_extra_notifications(hass):
     hub = hass.data.get(DOMAIN)
     if not hub or "state" not in hub:
         return
-    now = dt_util.now()
+    now = _reminder_local_now(hass)
     async with hub["lock"]:
         state = hub["state"]
         if _notify_in_quiet(state, now):

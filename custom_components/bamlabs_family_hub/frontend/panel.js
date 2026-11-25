@@ -1,5 +1,5 @@
 /* BamLabs Family Hub — no external libraries, local Home Assistant storage. */
-const FAMILY_HUB_UI_VERSION = "1.9.1";
+const FAMILY_HUB_UI_VERSION = "1.9.2";
 class BamLabsFamilyHubPanel extends HTMLElement {
   constructor() {
     super();
@@ -951,8 +951,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
   async diagnosePush() {
     try {
       const result=await this._hass.callWS({type:"bamlabs_family_hub/push_diagnose"});
-      const lines=(result.members||[]).map(m=>`${m.name} (${String(m.hour).padStart(2,"0")}:00 Uhr, ${m.due} offene fällige Aufgaben): ${m.reason}`);
-      this.error=`🔎 Erinnerungsprüfung, ${result.local_time}:\n${lines.join("\n")||"Keine Familienmitglieder angelegt."}`;
+      const lines=(result.members||[]).map(m=>`${m.name} (${String(m.hour).padStart(2,"0")}:00 Uhr, ${m.due} offene fällige Aufgaben): ${m.reason}${m.sent_at ? ` Versand an HA-Benachrichtigungsdienst: ${m.sent_at}` : ""}`);
+      this.error=`🔎 Erinnerungsprüfung, ${result.local_time} (${result.timezone||"lokal"}):\n${lines.join("\n")||"Keine Familienmitglieder angelegt."}`;
     } catch(e){this.error=e.message||String(e);}
     this.render();
   }
@@ -2790,6 +2790,8 @@ class BamLabsFamilyHubPanel extends HTMLElement {
     buttons.append(this.button("×",()=>{if(confirm(`Aufgabe „${t.title}“ wirklich löschen?`))this.request("task_delete",{task_id:t.id});},"btn secondary danger"));r.append(buttons);return r;
   }
 }
-customElements.define("bamlabs-family-hub-panel",BamLabsFamilyHubPanel);
+if (!customElements.get("bamlabs-family-hub-panel")) {
+  customElements.define("bamlabs-family-hub-panel",BamLabsFamilyHubPanel);
+}
 
 /* PRO preview: responsive savings goal cards. */
